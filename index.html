@@ -364,10 +364,18 @@ function alertaCard(icon,cor,bg,titulo,sub,valor,onclick){
     '<div style="flex:1"><div style="font-size:14.5px;font-weight:600">'+titulo+'</div>'+(sub?'<div style="font-size:12px;color:var(--muted);margin-top:2px">'+sub+'</div>':'')+'</div>'+
     (valor?'<div class="val2">'+valor+'</div>':'')+'</div>';
 }
+function hojeISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+// Monta o horário do lançamento: se for hoje, usa a hora atual; se for
+// retroativo, usa meio-dia daquele dia.
+function montarDataHora(dataISO){
+  if(!dataISO || dataISO===hojeISO()) return new Date().toISOString();
+  return new Date(dataISO+'T12:00:00').toISOString();
+}
 function abrirVenda(){
   abrirFolha('Lançar venda',
     '<label class="campo">Valor da venda</label>'+
     '<input id="vv" inputmode="decimal" placeholder="R$ 0,00" style="font-size:24px;font-family:var(--g);text-align:center"/>'+
+    '<label class="campo">Data</label><input id="vdata" type="date" value="'+hojeISO()+'"/>'+
     '<button class="primario" id="vBtn">Registrar venda</button>',
     function(){
       const e=document.getElementById('vv'); e.focus();
@@ -379,7 +387,10 @@ async function salvarVenda(){
   const v=parseFloat(String(document.getElementById('vv').value).replace(',','.')); if(!v)return;
   const b=document.getElementById('vBtn'); b.textContent='Salvando…'; b.disabled=true;
   try{
-    await api('movimentos',{method:'POST',body:JSON.stringify({tipo:'ENTRADA',categoria:'Venda',valor:v,descricao:'Venda'})});
+    await api('movimentos',{method:'POST',body:JSON.stringify({
+      tipo:'ENTRADA',categoria:'Venda',valor:v,descricao:'Venda',
+      data_hora:montarDataHora(document.getElementById('vdata').value)
+    })});
     fecharFolha(); await recarregar();
   }catch(e){ alert(e.message); b.textContent='Registrar venda'; b.disabled=false; }
 }
@@ -387,21 +398,26 @@ async function salvarVenda(){
 // ============================================================
 //  CAIXA
 // ============================================================
+let caixaData='';
 function vCaixa(){
-  const s=saldoDia(); const d0=inicioDia(),am=d0+86400000;
+  if(!caixaData) caixaData=hojeISO();
+  const d0=new Date(caixaData+'T00:00:00').getTime(), am=d0+86400000;
+  const ent=somaMov('ENTRADA',d0,am), sai=somaMov('SAIDA',d0,am);
   const doDia=movimentos.filter(function(m){ return m.ts>=d0&&m.ts<am; }).sort(function(a,b){ return b.ts-a.ts; });
-  return '<div class="duo">'+
-      '<div class="mini"><div class="l">Entradas</div><div class="v" style="color:var(--emerald)">'+brl(s.ent)+'</div></div>'+
-      '<div class="mini"><div class="l">Saídas</div><div class="v" style="color:var(--rose)">'+brl(s.sai)+'</div></div>'+
-      '<div class="mini"><div class="l">Saldo</div><div class="v">'+brl(s.ent-s.sai)+'</div></div>'+
+  const ehHoje = caixaData===hojeISO();
+  return '<div><label class="campo" style="margin-top:0">Dia</label><input type="date" value="'+caixaData+'" onchange="caixaData=this.value;render()"/></div>'+
+    '<div class="duo">'+
+      '<div class="mini"><div class="l">Entradas</div><div class="v" style="color:var(--emerald)">'+brl(ent)+'</div></div>'+
+      '<div class="mini"><div class="l">Saídas</div><div class="v" style="color:var(--rose)">'+brl(sai)+'</div></div>'+
+      '<div class="mini"><div class="l">Saldo</div><div class="v">'+brl(ent-sai)+'</div></div>'+
     '</div>'+
-    '<h2 class="sec">Movimentos de hoje</h2>'+
-    (doDia.length?doDia.map(function(m){ const ent=m.tipo==='ENTRADA'; return '<div class="item">'+
-      '<div class="iconC" style="background:'+(ent?'#E7F6EF':'#FDECEC')+';color:'+(ent?'var(--emerald)':'var(--rose)')+'">'+(ent?IC.up:IC.down)+'</div>'+
+    '<h2 class="sec">Movimentos '+(ehHoje?'de hoje':'de '+dm(caixaData))+'</h2>'+
+    (doDia.length?doDia.map(function(m){ const e=m.tipo==='ENTRADA'; return '<div class="item">'+
+      '<div class="iconC" style="background:'+(e?'#E7F6EF':'#FDECEC')+';color:'+(e?'var(--emerald)':'var(--rose)')+'">'+(e?IC.up:IC.down)+'</div>'+
       '<div style="flex:1"><div style="font-size:14px;font-weight:500">'+(m.desc||m.categoria||'Lançamento')+'</div><div style="font-size:11.5px;color:var(--muted)">'+(m.categoria||'')+' · '+new Date(m.ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'</div></div>'+
-      '<div class="val2" style="color:'+(ent?'var(--emerald)':'var(--rose)')+'">'+(ent?'+':'−')+' '+brl(m.valor)+'</div>'+
+      '<div class="val2" style="color:'+(e?'var(--emerald)':'var(--rose)')+'">'+(e?'+':'−')+' '+brl(m.valor)+'</div>'+
       '<button class="lixo" onclick="apagarMov(\''+m.id+'\')">'+IC.lixo+'</button></div>'; }).join('')
-      :'<div class="vazio">Nenhum lançamento hoje. Toque em + para adicionar.</div>');
+      :'<div class="vazio">Nenhum lançamento neste dia. Toque em + para adicionar.</div>');
 }
 let movTipo='ENTRADA',movCat='Venda';
 function abrirMov(){
@@ -411,6 +427,7 @@ function abrirMov(){
     '<label class="campo">Valor</label><input id="mv" inputmode="decimal" placeholder="0,00"/>'+
     '<label class="campo">Categoria</label><div class="chips" id="mCats"></div>'+
     '<label class="campo">Descrição / natureza do gasto</label><input id="md" placeholder="Ex: Pagamento Itafarma, retirada Bia"/>'+
+    '<label class="campo">Data</label><input id="mdata" type="date" value="'+hojeISO()+'"/>'+
     '<button class="primario" id="mBtn">Salvar lançamento</button>',
     function(){ setMovTipo('ENTRADA'); document.getElementById('mv').focus(); document.getElementById('mBtn').onclick=salvarMov; });
 }
@@ -425,7 +442,11 @@ async function salvarMov(){
   const v=parseFloat(String(document.getElementById('mv').value).replace(',','.'));if(!v)return;
   const b=document.getElementById('mBtn'); b.textContent='Salvando…'; b.disabled=true;
   try{
-    await api('movimentos',{method:'POST',body:JSON.stringify({tipo:movTipo,categoria:movCat,valor:v,descricao:document.getElementById('md').value.trim()||null})});
+    await api('movimentos',{method:'POST',body:JSON.stringify({
+      tipo:movTipo,categoria:movCat,valor:v,
+      descricao:document.getElementById('md').value.trim()||null,
+      data_hora:montarDataHora(document.getElementById('mdata').value)
+    })});
     fecharFolha(); await recarregar();
   }catch(e){ alert(e.message); b.textContent='Salvar lançamento'; b.disabled=false; }
 }
