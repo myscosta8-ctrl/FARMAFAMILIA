@@ -85,6 +85,12 @@
   .primario{width:100%;background:var(--amber);color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--i);margin-top:16px}
   .fechar{background:none;border:none;cursor:pointer;padding:4px;font-size:18px;color:var(--muted)}
   .dica{font-size:12px;color:var(--muted);line-height:1.5;margin-top:8px}
+  .catLinha{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px;cursor:pointer}
+  .catTopo{display:flex;justify-content:space-between;align-items:center;font-size:13.5px}
+  .catTopo strong{font-family:var(--g);font-size:14.5px}
+  .catBarra{height:6px;background:#EEEAE9;border-radius:4px;margin-top:7px;overflow:hidden}
+  .catBarra div{height:100%;border-radius:4px}
+  .catPct{font-size:10.5px;color:var(--muted);margin-top:5px}
   .totalAberto{display:flex;justify-content:space-between;align-items:center;background:var(--amberSoft);border:1px solid #F5D5D1;border-radius:12px;padding:11px 14px;font-size:13px;color:var(--pine)}
   .totalAberto strong{font-family:var(--g);font-size:16px}
   .previa{font-size:13px;font-weight:600;color:var(--emerald);text-align:center;min-height:18px;margin-top:6px}
@@ -777,18 +783,41 @@ function autoLinha(){
     if(d.vencimento)document.getElementById('cvenc').value=d.vencimento.toISOString().slice(0,10);
   }
 }
-async function quitar(id){
+// Pergunta a data do pagamento antes de dar baixa, para que o lançamento
+// caia no dia certo do caixa (e não sempre no dia de hoje).
+function quitar(id){
   const c=contas.filter(function(x){return x.id===id})[0]; if(!c)return;
+  const receber=c.tipo==='RECEBER';
+  // sugere a data do vencimento; se ainda não venceu, sugere hoje
+  const sugerida = (c.venc && c.venc <= hojeISO()) ? c.venc : hojeISO();
+  abrirFolha(receber?'Marcar recebido':'Marcar pago',
+    '<div class="item" style="margin-bottom:4px"><div style="flex:1"><div style="font-size:14px;font-weight:500">'+c.desc+'</div>'+
+    (c.categoria?'<div style="font-size:11.5px;color:var(--muted)">'+c.categoria+'</div>':'')+'</div>'+
+    '<div class="val2" style="font-size:16px">'+brl(c.valor)+'</div></div>'+
+    '<label class="campo">'+(receber?'Data do recebimento':'Data do pagamento')+'</label>'+
+    '<input id="qdata" type="date" value="'+sugerida+'"/>'+
+    '<div class="dica">O lançamento entra no caixa nesta data.</div>'+
+    '<button class="primario" id="qBtn">Confirmar</button>',
+    function(){ document.getElementById('qBtn').onclick=function(){ confirmarBaixa(id); }; });
+}
+async function confirmarBaixa(id){
+  const c=contas.filter(function(x){return x.id===id})[0]; if(!c)return;
+  const data=document.getElementById('qdata').value||hojeISO();
+  const b=document.getElementById('qBtn'); b.textContent='Salvando…'; b.disabled=true;
   try{
-    await api('contas?id=eq.'+id,{method:'PATCH',body:JSON.stringify({status:'PAGO',data_baixa:new Date().toISOString()})});
+    await api('contas?id=eq.'+id,{method:'PATCH',body:JSON.stringify({
+      status:'PAGO', data_baixa:montarDataHora(data)
+    })});
     await api('movimentos',{method:'POST',body:JSON.stringify({
       tipo:c.tipo==='PAGAR'?'SAIDA':'ENTRADA',
-      categoria:c.tipo==='PAGAR'?'Distribuidor':'Outros',
+      // usa a categoria da própria conta; boleto de distribuidor entra como Distribuidor
+      categoria:c.categoria||(c.tipo==='PAGAR'?(c.origem==='BOLETO'?'Distribuidor':'Outros'):'Outros'),
       valor:c.valor,
-      descricao:(c.tipo==='PAGAR'?'Pgto: ':'Receb.: ')+c.desc
+      descricao:c.desc,
+      data_hora:montarDataHora(data)
     })});
-    await recarregar();
-  }catch(e){ alert(e.message); }
+    fecharFolha(); await recarregar();
+  }catch(e){ alert(e.message); b.textContent='Confirmar'; b.disabled=false; }
 }
 async function apagarConta(id){
   if(!confirm('Apagar esta conta?'))return;
@@ -807,6 +836,47 @@ function intervalo(){
   if(relPeriodo==='custom'&&relDe&&relAte)return[new Date(relDe+'T00:00:00').getTime(),new Date(relAte+'T00:00:00').getTime()+86400000];
   return null;
 }
+// Agrupa os lançamentos do período por categoria, do maior para o menor
+function porCategoria(tipo,inicio,fim){
+  const mapa={};
+  movimentos.forEach(function(m){
+    if(m.tipo!==tipo||m.ts<inicio||m.ts>=fim) return;
+    const c=m.categoria||'Sem categoria';
+    mapa[c]=(mapa[c]||0)+m.valor;
+  });
+  return Object.keys(mapa).map(function(c){ return {cat:c,total:mapa[c]}; })
+    .sort(function(a,b){ return b.total-a.total; });
+}
+function blocoCategorias(titulo,tipo,iv,cor){
+  const lista=porCategoria(tipo,iv[0],iv[1]);
+  if(!lista.length) return '';
+  const soma=lista.reduce(function(s,x){ return s+x.total; },0);
+  return '<h2 class="sec">'+titulo+'</h2>'+
+    lista.map(function(x){
+      const pct=soma>0?Math.round(x.total/soma*100):0;
+      return '<div class="catLinha" onclick="verCategoria(\''+encodeURIComponent(x.cat)+'\',\''+tipo+'\')">'+
+        '<div class="catTopo"><span>'+x.cat+'</span><strong>'+brl(x.total)+'</strong></div>'+
+        '<div class="catBarra"><div style="width:'+pct+'%;background:'+cor+'"></div></div>'+
+        '<div class="catPct">'+pct+'% · toque para ver os lançamentos</div></div>';
+    }).join('');
+}
+// Mostra os lançamentos de uma categoria no período selecionado
+function verCategoria(catEnc,tipo){
+  const cat=decodeURIComponent(catEnc);
+  const iv=intervalo(); if(!iv) return;
+  const itens=movimentos.filter(function(m){
+    return m.tipo===tipo && m.ts>=iv[0] && m.ts<iv[1] && (m.categoria||'Sem categoria')===cat;
+  }).sort(function(a,b){ return a.ts-b.ts; });
+  const soma=itens.reduce(function(s,m){ return s+m.valor; },0);
+  abrirFolha(cat,
+    '<div class="totalAberto"><span>'+itens.length+' lançamento(s)</span><strong>'+brl(soma)+'</strong></div>'+
+    itens.map(function(m){
+      return '<div class="item" style="margin-top:8px"><div style="flex:1">'+
+        '<div style="font-size:14px;font-weight:500">'+(m.desc||cat)+'</div>'+
+        '<div style="font-size:11.5px;color:var(--muted)">'+dm(new Date(m.ts).toISOString().slice(0,10))+'</div></div>'+
+        '<div class="val2">'+brl(m.valor)+'</div></div>';
+    }).join(''));
+}
 function vRel(){
   const per=[['diario','Diário'],['semanal','Semanal'],['mensal','Mensal'],['custom','Período']];
   const iv=intervalo();
@@ -819,7 +889,9 @@ function vRel(){
       '<div class="val2" style="font-size:24px">'+brl(ent-sai)+'</div>'+
       '<div style="display:flex;gap:16px;margin-top:8px;font-size:13px"><span style="color:var(--emerald)">▲ Entradas '+brl(ent)+'</span><span style="color:var(--rose)">▼ Saídas '+brl(sai)+'</span></div>'+
     '</section>'+
-    '<button class="btnS" style="width:100%" onclick="exportarCsv()">'+IC.baixar+' Exportar em CSV (Excel)</button>';
+    blocoCategorias('Saídas por categoria','SAIDA',iv,'var(--rose)')+
+    blocoCategorias('Entradas por categoria','ENTRADA',iv,'var(--emerald)')+
+    '<button class="btnS" style="width:100%;margin-top:6px" onclick="exportarCsv()">'+IC.baixar+' Exportar em CSV (Excel)</button>';
   }
   return '<div class="chips">'+per.map(function(p){ return '<button class="chip '+(relPeriodo===p[0]?'on':'')+'" onclick="relPeriodo=\''+p[0]+'\';render()">'+p[1]+'</button>'; }).join('')+'</div>'+
     (relPeriodo==='custom'?'<div class="duo"><div style="flex:1"><label class="campo">De</label><input type="date" value="'+relDe+'" onchange="relDe=this.value;render()"/></div><div style="flex:1"><label class="campo">Até</label><input type="date" value="'+relAte+'" onchange="relAte=this.value;render()"/></div></div>':'')+
