@@ -77,6 +77,7 @@
   .fechar{background:none;border:none;cursor:pointer;padding:4px;font-size:18px;color:var(--muted)}
   .dica{font-size:12px;color:var(--muted);line-height:1.5;margin-top:8px}
   .previa{font-size:13px;font-weight:600;color:var(--emerald);text-align:center;min-height:18px;margin-top:6px}
+  .btnExcluir{width:100%;background:transparent;color:var(--rose);border:1px solid #F0C4CB;border-radius:12px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--i);margin-top:10px}
   .import{display:flex;align-items:center;justify-content:center;gap:10px;background:var(--amberSoft);border:1px dashed var(--amber);border-radius:12px;padding:13px;font-size:13.5px;font-weight:600;color:var(--pine);cursor:pointer;width:100%}
   .import svg{width:18px;height:18px}
   .foto{display:flex;align-items:center;justify-content:center;gap:10px;background:var(--pine);color:#fff;border-radius:12px;padding:13px;font-size:14.5px;font-weight:600;cursor:pointer;width:100%;margin-bottom:2px}
@@ -186,7 +187,7 @@ async function carregarTudo(){
       api('produtos?select=*&order=descricao.asc'),
       api('contas?select=*&order=vencimento.asc')
     ]);
-    movimentos = (res[0]||[]).map(function(x){ return {id:x.id, ts:new Date(x.data_hora).getTime(), tipo:x.tipo, categoria:x.categoria, valor:Number(x.valor), desc:x.descricao}; });
+    movimentos = (res[0]||[]).map(function(x){ return {id:x.id, ts:new Date(x.data_hora).getTime(), tipo:x.tipo, categoria:x.categoria, valor:Number(x.valor), desc:x.descricao, criadoEm:x.criado_em?new Date(x.criado_em).getTime():null}; });
     produtos   = (res[1]||[]).map(function(x){ return {id:x.id, desc:x.descricao, codigo:x.codigo_barras||'', estoque:Number(x.estoque), minimo:Number(x.estoque_minimo), validade:x.validade}; });
     contas     = (res[2]||[]).map(function(x){ return {id:x.id, tipo:x.tipo, desc:x.descricao, valor:Number(x.valor), venc:x.vencimento, status:x.status, linha:x.linha_digitavel||''}; });
     offline=false; guardarCopia();
@@ -365,6 +366,19 @@ function vInicio(){
   if(a.baixo>0) al+=alertaCard(IC.pacote,'var(--amber)','#FEF3D9',a.baixo+' produtos em falta','Abaixo do estoque mínimo','',"irPara('estoque')");
   if(a.venc>0) al+=alertaCard(IC.alerta,'var(--rose)','#FDECEC',a.venc+' produto(s) vencido(s)','Retirar do estoque','',"irPara('estoque')");
   if(!al) al='<div class="vazio">Tudo em dia. Nenhum alerta agora.</div>';
+  // últimos lançamentos, do mais novo para o mais antigo
+  const recentes=[...movimentos].sort(function(a,b){ return (b.criadoEm||b.ts)-(a.criadoEm||a.ts); }).slice(0,6);
+  const listaRecentes = recentes.length
+    ? recentes.map(function(m){
+        const e=m.tipo==='ENTRADA', ed=podeEditar(m);
+        return '<div class="item"'+(ed?' style="cursor:pointer" onclick="abrirEditar(\''+m.id+'\')"':'')+'>'+
+          '<div class="iconC" style="background:'+(e?'#E7F6EF':'#FDECEC')+';color:'+(e?'var(--emerald)':'var(--rose)')+'">'+(e?IC.up:IC.down)+'</div>'+
+          '<div style="flex:1"><div style="font-size:14px;font-weight:500">'+(m.desc||m.categoria||'Lançamento')+'</div>'+
+          '<div style="font-size:11.5px;color:var(--muted)">'+dm(new Date(m.ts).toISOString().slice(0,10))+' · '+(m.categoria||'')+'</div></div>'+
+          '<div style="text-align:right"><div class="val2" style="color:'+(e?'var(--emerald)':'var(--rose)')+'">'+(e?'+':'−')+' '+brl(m.valor)+'</div>'+
+          (ed?'<div style="font-size:10.5px;color:var(--muted);margin-top:2px">toque para corrigir</div>':'')+'</div></div>';
+      }).join('')
+    : '<div class="vazio">Nenhum lançamento ainda.</div>';
   return '<div style="display:grid;gap:10px">'+
       '<section class="hero"><div class="brilho"></div><div class="lbl">Venda de hoje</div><div class="val">'+brl(r.dia)+'</div></section>'+
       '<div class="duo">'+
@@ -373,7 +387,8 @@ function vInicio(){
       '</div>'+
     '</div>'+
     '<button class="btnP" style="justify-self:start" onclick="abrirVenda()">+ Lançar venda</button>'+
-    '<h2 class="sec">Precisa de atenção</h2>'+al;
+    '<h2 class="sec">Precisa de atenção</h2>'+al+
+    '<h2 class="sec">Últimos lançamentos</h2>'+listaRecentes;
 }
 function alertaCard(icon,cor,bg,titulo,sub,valor,onclick){
   return '<div class="item" style="cursor:pointer" onclick="'+onclick+'">'+
@@ -408,6 +423,60 @@ function previa(idCampo,idAviso){
   const v=parseValor(document.getElementById(idCampo).value);
   el.textContent = isNaN(v)||v===0 ? '' : 'Será lançado: '+brl(v);
 }
+// Lançamentos podem ser corrigidos ou apagados por até 72h após serem feitos.
+const PRAZO_EDICAO=72*3600*1000;
+function podeEditar(m){
+  if(!m.criadoEm) return true;
+  return (Date.now()-m.criadoEm) < PRAZO_EDICAO;
+}
+function horasRestantes(m){
+  if(!m.criadoEm) return null;
+  const resta=PRAZO_EDICAO-(Date.now()-m.criadoEm);
+  if(resta<=0) return 0;
+  return Math.ceil(resta/3600000);
+}
+let editTipo='ENTRADA',editCat='Venda';
+function abrirEditar(id){
+  const m=movimentos.filter(function(x){return x.id===id})[0]; if(!m) return;
+  if(!podeEditar(m)){ alert('Este lançamento tem mais de 72 horas e não pode mais ser alterado.'); return; }
+  editTipo=m.tipo; editCat=m.categoria||CATS[m.tipo][0];
+  const dataISO=new Date(m.ts).getFullYear()+'-'+String(new Date(m.ts).getMonth()+1).padStart(2,'0')+'-'+String(new Date(m.ts).getDate()).padStart(2,'0');
+  const h=horasRestantes(m);
+  abrirFolha('Corrigir lançamento',
+    '<div class="toggle" id="edToggle"><button onclick="setEditTipo(\'ENTRADA\')">Entrada</button><button onclick="setEditTipo(\'SAIDA\')">Saída</button></div>'+
+    '<label class="campo">Valor</label><input id="ev" inputmode="numeric" oninput="mascaraMoeda(this);previa(\'ev\',\'ePrev\')" value="'+m.valor.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'"/>'+
+    '<div id="ePrev" class="previa"></div>'+
+    '<label class="campo">Categoria</label><div class="chips" id="eCats"></div>'+
+    '<label class="campo">Descrição</label><input id="ed" value="'+(m.desc||'').replace(/"/g,'&quot;')+'"/>'+
+    '<label class="campo">Data</label><input id="edata" type="date" value="'+dataISO+'"/>'+
+    '<div class="dica">Pode ser corrigido por mais '+(h!=null?h+'h':'algum tempo')+'.</div>'+
+    '<button class="primario" id="eBtn">Salvar correção</button>'+
+    '<button class="btnExcluir" id="eDel">Excluir lançamento</button>',
+    function(){
+      setEditTipo(editTipo,editCat);
+      document.getElementById('eBtn').onclick=function(){ salvarEdicao(id); };
+      document.getElementById('eDel').onclick=function(){ apagarMov(id); };
+    });
+}
+function setEditTipo(t,catInicial){
+  editTipo=t; editCat=catInicial||CATS[t][0];
+  const tg=document.getElementById('edToggle');
+  tg.children[0].style.background=t==='ENTRADA'?'var(--emerald)':'transparent'; tg.children[0].style.color=t==='ENTRADA'?'#fff':'var(--muted)';
+  tg.children[1].style.background=t==='SAIDA'?'var(--rose)':'transparent'; tg.children[1].style.color=t==='SAIDA'?'#fff':'var(--muted)';
+  document.getElementById('eCats').innerHTML=CATS[t].map(function(c){ return '<button class="chip '+(c===editCat?'on':'')+'" onclick="editCat=\''+c+'\';document.querySelectorAll(\'#eCats .chip\').forEach(function(x){x.classList.remove(\'on\')});event.target.classList.add(\'on\')">'+c+'</button>'; }).join('');
+}
+async function salvarEdicao(id){
+  const v=parseValor(document.getElementById('ev').value); if(!v||isNaN(v))return;
+  const b=document.getElementById('eBtn'); b.textContent='Salvando…'; b.disabled=true;
+  try{
+    await api('movimentos?id=eq.'+id,{method:'PATCH',body:JSON.stringify({
+      tipo:editTipo, categoria:editCat, valor:v,
+      descricao:document.getElementById('ed').value.trim()||null,
+      data_hora:montarDataHora(document.getElementById('edata').value)
+    })});
+    fecharFolha(); await recarregar();
+  }catch(e){ alert(e.message); b.textContent='Salvar correção'; b.disabled=false; }
+}
 function abrirVenda(){
   abrirFolha('Lançar venda',
     '<label class="campo">Valor da venda</label>'+
@@ -436,6 +505,20 @@ async function salvarVenda(){
 // ============================================================
 //  CAIXA
 // ============================================================
+// Um lançamento só pode ser editado ou apagado nas primeiras 72 horas
+// depois de criado. Depois disso, o histórico fica travado.
+const PRAZO_EDICAO_MS = 72*3600000;
+function podeEditar(m){
+  if(!m.criadoEm) return true;              // lançamentos antigos sem registro
+  return (Date.now()-m.criadoEm) < PRAZO_EDICAO_MS;
+}
+function horasRestantes(m){
+  if(!m.criadoEm) return null;
+  const resta=PRAZO_EDICAO_MS-(Date.now()-m.criadoEm);
+  if(resta<=0) return 0;
+  const h=Math.floor(resta/3600000);
+  return h<1 ? '<1' : h;
+}
 let caixaData='';
 function vCaixa(){
   if(!caixaData) caixaData=hojeISO();
@@ -450,11 +533,11 @@ function vCaixa(){
       '<div class="mini"><div class="l">Saldo</div><div class="v">'+brl(ent-sai)+'</div></div>'+
     '</div>'+
     '<h2 class="sec">Movimentos '+(ehHoje?'de hoje':'de '+dm(caixaData))+'</h2>'+
-    (doDia.length?doDia.map(function(m){ const e=m.tipo==='ENTRADA'; return '<div class="item">'+
+    (doDia.length?doDia.map(function(m){ const e=m.tipo==='ENTRADA'; const ed=podeEditar(m); return '<div class="item"'+(ed?' style="cursor:pointer" onclick="abrirEditar(\''+m.id+'\')"':'')+'>'+
       '<div class="iconC" style="background:'+(e?'#E7F6EF':'#FDECEC')+';color:'+(e?'var(--emerald)':'var(--rose)')+'">'+(e?IC.up:IC.down)+'</div>'+
       '<div style="flex:1"><div style="font-size:14px;font-weight:500">'+(m.desc||m.categoria||'Lançamento')+'</div><div style="font-size:11.5px;color:var(--muted)">'+(m.categoria||'')+' · '+new Date(m.ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'</div></div>'+
-      '<div class="val2" style="color:'+(e?'var(--emerald)':'var(--rose)')+'">'+(e?'+':'−')+' '+brl(m.valor)+'</div>'+
-      '<button class="lixo" onclick="apagarMov(\''+m.id+'\')">'+IC.lixo+'</button></div>'; }).join('')
+      '<div style="text-align:right"><div class="val2" style="color:'+(e?'var(--emerald)':'var(--rose)')+'">'+(e?'+':'−')+' '+brl(m.valor)+'</div>'+
+      (ed?'<div style="font-size:10.5px;color:var(--muted);margin-top:2px">toque para corrigir</div>':'<div style="font-size:10.5px;color:var(--muted);margin-top:2px">prazo encerrado</div>')+'</div></div>'; }).join('')
       :'<div class="vazio">Nenhum lançamento neste dia. Toque em + para adicionar.</div>');
 }
 let movTipo='ENTRADA',movCat='Venda';
@@ -490,8 +573,10 @@ async function salvarMov(){
   }catch(e){ alert(e.message); b.textContent='Salvar lançamento'; b.disabled=false; }
 }
 async function apagarMov(id){
+  const m=movimentos.filter(function(x){return x.id===id})[0];
+  if(m && !podeEditar(m)){ alert('Este lançamento tem mais de 72 horas e não pode mais ser excluído.'); return; }
   if(!confirm('Apagar este lançamento?'))return;
-  try{ await api('movimentos?id=eq.'+id,{method:'DELETE'}); await recarregar(); }catch(e){ alert(e.message); }
+  try{ await api('movimentos?id=eq.'+id,{method:'DELETE'}); fecharFolha(); await recarregar(); }catch(e){ alert(e.message); }
 }
 
 // ============================================================
