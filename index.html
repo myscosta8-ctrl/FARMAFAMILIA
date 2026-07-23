@@ -78,6 +78,8 @@
   .dica{font-size:12px;color:var(--muted);line-height:1.5;margin-top:8px}
   .import{display:flex;align-items:center;justify-content:center;gap:10px;background:var(--amberSoft);border:1px dashed var(--amber);border-radius:12px;padding:13px;font-size:13.5px;font-weight:600;color:var(--pine);cursor:pointer;width:100%}
   .import svg{width:18px;height:18px}
+  .foto{display:flex;align-items:center;justify-content:center;gap:10px;background:var(--pine);color:#fff;border-radius:12px;padding:13px;font-size:14.5px;font-weight:600;cursor:pointer;width:100%;margin-bottom:2px}
+  .foto svg{width:19px;height:19px;vertical-align:-4px;margin-right:2px}
 
   #login{max-width:440px;margin:0 auto;min-height:100vh;background:var(--pine);color:#fff;padding:28px;display:flex;flex-direction:column;justify-content:center}
   #login .lLabel{font-size:12px;font-weight:600;color:var(--amberGlass);display:block;margin:12px 0 6px}
@@ -216,7 +218,34 @@ function alertas(){
   return {baixo:baixo,venc:venc,contas:cp.length,contasTotal:cp.reduce(function(s,c){ return s+c.valor; },0),proxima:contasOrd('PAGAR').filter(function(c){ return c.status!=='PAGO'; })[0]};
 }
 const BASE_VENC=Date.UTC(1997,9,7);
+// Linha digitável (47 dígitos)
 function decodificarLinha(linha){ const d=String(linha).replace(/\D/g,''); if(d.length!==47)return null; const fator=parseInt(d.slice(33,37),10); const venc=fator>0?new Date(BASE_VENC+fator*86400000):null; const c=parseInt(d.slice(37,47),10); return {valor:isNaN(c)?null:c/100,vencimento:venc}; }
+// Código de barras do boleto (44 dígitos)
+function decodificarCodigoBarras(cb){ const d=String(cb).replace(/\D/g,''); if(d.length!==44)return null; const fator=parseInt(d.slice(5,9),10); const venc=fator>0?new Date(BASE_VENC+fator*86400000):null; const c=parseInt(d.slice(9,19),10); return {valor:isNaN(c)?null:c/100,vencimento:venc}; }
+
+// Lê a FOTO do boleto e extrai valor e vencimento pelo código de barras.
+// A foto NÃO é guardada — serve só para a leitura.
+async function lerBoletoDaFoto(arquivo){
+  if(!('BarcodeDetector' in window)){
+    throw new Error('Este navegador não lê código de barras. Use o Chrome no Android, ou digite a linha do boleto.');
+  }
+  let formatos=['itf','code_128','codabar','code_39'];
+  try{
+    const suportados=await BarcodeDetector.getSupportedFormats();
+    formatos=formatos.filter(function(f){ return suportados.indexOf(f)>=0; });
+    if(!formatos.length) formatos=suportados;
+  }catch(e){}
+  const detector=new BarcodeDetector({formats:formatos});
+  const img=await createImageBitmap(arquivo);
+  const codigos=await detector.detect(img);
+  if(img.close) img.close();
+  for(let i=0;i<codigos.length;i++){
+    const d=String(codigos[i].rawValue||'').replace(/\D/g,'');
+    if(d.length===44){ const r=decodificarCodigoBarras(d); if(r) return r; }
+    if(d.length===47){ const r=decodificarLinha(d); if(r) return r; }
+  }
+  throw new Error('Não encontrei o código de barras. Aproxime mais, com boa luz, e enquadre só a faixa de barras.');
+}
 
 const IC={
   inicio:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>',
@@ -231,7 +260,8 @@ const IC={
   alerta:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>',
   lixo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>',
   baixar:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>',
-  sair:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>'
+  sair:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>',
+  camera:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>'
 };
 
 // ============================================================
@@ -528,6 +558,7 @@ function vContas(){
 function abrirConta(){
   const pagar=contaAba==='PAGAR';
   abrirFolha(pagar?'Adicionar conta a pagar':'Adicionar conta a receber',
+    (pagar?'<label class="foto"><span>'+IC.camera+' Ler boleto por foto</span><input type="file" accept="image/*" capture="environment" onchange="fotoBoleto(event)" style="display:none"/></label><div id="cFoto" class="dica" style="margin:8px 0 2px"></div>':'')+
     '<label class="campo">'+(pagar?'Distribuidor / descrição':'Cliente / descrição')+'</label><input id="cd" placeholder="'+(pagar?'Ex: Itafarma':'Ex: Convênio X')+'"/>'+
     (pagar?'<label class="campo">Linha digitável (opcional — preenche valor e vencimento)</label><input id="cl" inputmode="numeric" oninput="autoLinha()" placeholder="Números do boleto"/>':'')+
     '<label class="campo">Valor</label><input id="cv" inputmode="decimal" placeholder="R$ 0,00"/>'+
@@ -535,6 +566,23 @@ function abrirConta(){
     (pagar?'<div class="dica">Dica: digitando a linha do boleto, o valor e o vencimento aparecem sozinhos.</div>':'')+
     '<button class="primario" id="cBtn">Salvar</button>',
     function(){ document.getElementById('cd').focus(); document.getElementById('cBtn').onclick=salvarConta; });
+}
+async function fotoBoleto(ev){
+  const arq=ev.target.files[0]; if(!arq)return;
+  const aviso=document.getElementById('cFoto');
+  aviso.innerHTML='<span class="girando">◜</span> Lendo o boleto…';
+  aviso.style.color='var(--muted)';
+  try{
+    const r=await lerBoletoDaFoto(arq);
+    if(r.valor!=null) document.getElementById('cv').value=r.valor.toFixed(2).replace('.',',');
+    if(r.vencimento) document.getElementById('cvenc').value=r.vencimento.toISOString().slice(0,10);
+    aviso.textContent='Lido: '+brl(r.valor)+(r.vencimento?' · vence '+dm(r.vencimento.toISOString().slice(0,10)):'')+'. Confira e informe o distribuidor.';
+    aviso.style.color='var(--emerald)';
+  }catch(e){
+    aviso.textContent=e.message;
+    aviso.style.color='var(--rose)';
+  }
+  ev.target.value='';
 }
 function autoLinha(){
   const d=decodificarLinha(document.getElementById('cl').value);
