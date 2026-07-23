@@ -1,13 +1,26 @@
 {
+  "id": "/FARMAFAMILIA/",
   "name": "Farma Família — Gestão",
   "short_name": "Farma Família",
   "description": "Controle de vendas, caixa, estoque e contas da farmácia",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
   "orientation": "portrait",
+  "lang": "pt-BR",
+  "dir": "ltr",
   "background_color": "#B7251E",
   "theme_color": "#B7251E",
+  "categories": [
+    "business",
+    "finance",
+    "productivity"
+  ],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "icone-192.png",
@@ -19,7 +32,21 @@
       "src": "icone-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "icone-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "logo.png",
+      "sizes": "640x619",
+      "type": "image/png",
+      "form_factor": "narrow"
     }
   ]
 }

@@ -81,6 +81,7 @@
   .toggle button{flex:1;border:none;border-radius:9px;padding:9px 0;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--i);background:transparent;color:var(--muted)}
   .chips{display:flex;gap:8px;flex-wrap:wrap}
   .chip{border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 13px;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;font-family:var(--i)}
+  .chipNova{border-style:dashed;color:var(--pine);font-weight:600}
   .chip.on{background:var(--pine);color:#fff;border-color:var(--pine)}
   .primario{width:100%;background:var(--amber);color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--i);margin-top:16px}
   .fechar{background:none;border:none;cursor:pointer;padding:4px;font-size:18px;color:var(--muted)}
@@ -203,11 +204,14 @@ async function carregarTudo(){
     const res = await Promise.all([
       api('movimentos?select=*&order=data_hora.desc'),
       api('produtos?select=*&order=descricao.asc'),
-      api('contas?select=*&order=vencimento.asc')
+      api('contas?select=*&order=vencimento.asc'),
+      api('categorias?select=*&order=nome.asc')
     ]);
     movimentos = (res[0]||[]).map(function(x){ return {id:x.id, ts:new Date(x.data_hora).getTime(), tipo:x.tipo, categoria:x.categoria, valor:Number(x.valor), desc:x.descricao, criadoEm:x.criado_em?new Date(x.criado_em).getTime():null}; });
     produtos   = (res[1]||[]).map(function(x){ return {id:x.id, desc:x.descricao, codigo:x.codigo_barras||'', estoque:Number(x.estoque), minimo:Number(x.estoque_minimo), validade:x.validade}; });
     contas     = (res[2]||[]).map(function(x){ return {id:x.id, tipo:x.tipo, origem:x.origem||'MANUAL', categoria:x.categoria||'', desc:x.descricao, valor:Number(x.valor), venc:x.vencimento, status:x.status, linha:x.linha_digitavel||''}; });
+    montarCategorias(res[3]);
+    montarHistorico();
     offline=false; guardarCopia();
   }catch(e){
     if(String(e.message).indexOf('Sessão')>=0) throw e;
@@ -239,14 +243,33 @@ function brl(n){ return Number(n||0).toLocaleString('pt-BR',{style:'currency',cu
 function comHora(d){ return String(d).length===10 ? d+'T12:00:00' : d; }
 function dm(d){ return new Date(comHora(d)).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}); }
 function inicioDia(d){ d=d||new Date(); return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime(); }
-const CATS={ENTRADA:['Venda','Suprimento','Outros'],SAIDA:['Distribuidor','Imposto','Retirada','Compras','Fornecedor','Sangria','Luz','Água','Aluguel','Salário','Outros']};
+// Categorias vindas do banco (podem ser criadas pelo usuário)
+let CATS={ENTRADA:['Venda','Suprimento','Outros'],SAIDA:['Distribuidor','Outros'],DESPESA:['Frete','Outros']};
+let historicoDesc=[];   // descrições já usadas, para sugerir ao digitar
+function montarCategorias(lista){
+  const m={ENTRADA:[],SAIDA:[],DESPESA:[]};
+  (lista||[]).forEach(function(c){ if(m[c.tipo]&&m[c.tipo].indexOf(c.nome)<0) m[c.tipo].push(c.nome); });
+  ['ENTRADA','SAIDA','DESPESA'].forEach(function(t){ if(!m[t].length) m[t]=CATS[t]||['Outros']; });
+  CATS=m;
+}
+function montarHistorico(){
+  const vistos={}, lista=[];
+  movimentos.concat(contas.map(function(c){ return {desc:c.desc}; })).forEach(function(x){
+    const d=(x.desc||'').trim();
+    if(d && d.length>2 && !vistos[d.toLowerCase()]){ vistos[d.toLowerCase()]=1; lista.push(d); }
+  });
+  historicoDesc=lista.sort();
+}
+function listaSugestoes(id){
+  return '<datalist id="'+id+'">'+historicoDesc.map(function(d){ return '<option value="'+d.replace(/"/g,'&quot;')+'"></option>'; }).join('')+'</datalist>';
+}
 function somaMov(tipo,desde,ate,categoria){ return movimentos.filter(function(m){ return m.tipo===tipo&&m.ts>=desde&&m.ts<ate&&(!categoria||m.categoria===categoria); }).reduce(function(s,m){ return s+m.valor; },0); }
 function resumoVendas(){ const d0=inicioDia(),am=d0+86400000,s0=am-7*86400000,m0=new Date(new Date().getFullYear(),new Date().getMonth(),1).getTime(); return {dia:somaMov('ENTRADA',d0,am,'Venda'),semana:somaMov('ENTRADA',s0,am,'Venda'),mes:somaMov('ENTRADA',m0,am,'Venda')}; }
 function saldoDia(){ const d0=inicioDia(),am=d0+86400000; return {ent:somaMov('ENTRADA',d0,am),sai:somaMov('SAIDA',d0,am)}; }
 function estoqueDe(p){ return Number(p.estoque||0); }
 function diasAte(d){ return Math.round((new Date(comHora(d))-new Date())/86400000); }
 function statusValidade(v){ if(!v)return null; const dias=diasAte(v); if(dias<0)return {t:'Vencido',c:'var(--rose)',bg:'#FDECEC'}; if(dias<=30)return {t:'Vence em '+dias+'d',c:'var(--amber)',bg:'#FEF3D9'}; return {t:'Val. '+dm(v),c:'var(--muted)',bg:'#EEF2F0'}; }
-const CATS_DESPESA=['Frete','Combustível','Manutenção','Limpeza','Embalagem','Luz','Água','Internet','Aluguel','Salário','Imposto','Outros'];
+
 // Filtro das abas: Boletos e Despesas são contas a pagar; A receber é o que entra.
 function filtroAba(a){
   if(a==='RECEBER') return function(c){ return c.tipo==='RECEBER'; };
@@ -443,6 +466,29 @@ function porValorNoCampo(id,valor){
   const el=document.getElementById(id); if(!el) return;
   el.value=Number(valor).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
 }
+// Cria uma categoria nova (fica disponível para os 3 usuários)
+async function novaCategoria(tipo,alvo){
+  const nome=(prompt('Nome da nova categoria:')||'').trim();
+  if(!nome) return;
+  try{
+    await api('categorias',{method:'POST',body:JSON.stringify({nome:nome,tipo:tipo})});
+  }catch(e){
+    if(String(e.message).indexOf('duplicate')<0 && String(e.message).indexOf('23505')<0){ alert(e.message); return; }
+  }
+  try{
+    const lista=await api('categorias?select=*&order=nome.asc');
+    montarCategorias(lista);
+  }catch(e){}
+  if(alvo==='mov'){ movCat=nome; setMovTipo(movTipo); }
+  else if(alvo==='desp'){ despCat=nome; redesenharCatsDespesa(); }
+  else if(alvo==='edit'){ editCat=nome; setEditTipo(editTipo,nome); }
+}
+function redesenharCatsDespesa(){
+  const el=document.getElementById('dCats'); if(!el) return;
+  el.innerHTML=CATS.DESPESA.map(function(c){
+    return '<button class="chip '+(c===despCat?'on':'')+'" onclick="despCat=\''+c+'\';redesenharCatsDespesa()">'+c+'</button>';
+  }).join('')+'<button class="chip chipNova" onclick="novaCategoria(\'DESPESA\',\'desp\')">+ nova</button>';
+}
 function previa(idCampo,idAviso){
   const el=document.getElementById(idAviso); if(!el) return;
   const v=parseValor(document.getElementById(idCampo).value);
@@ -472,7 +518,7 @@ function abrirEditar(id){
     '<label class="campo">Valor</label><input id="ev" inputmode="numeric" oninput="mascaraMoeda(this);previa(\'ev\',\'ePrev\')" value="'+m.valor.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'"/>'+
     '<div id="ePrev" class="previa"></div>'+
     '<label class="campo">Categoria</label><div class="chips" id="eCats"></div>'+
-    '<label class="campo">Descrição</label><input id="ed" value="'+(m.desc||'').replace(/"/g,'&quot;')+'"/>'+
+    '<label class="campo">Descrição</label>'+listaSugestoes('sugEdit')+'<input id="ed" list="sugEdit" value="'+(m.desc||'').replace(/"/g,'&quot;')+'"/>'+
     '<label class="campo">Data</label><input id="edata" type="date" value="'+dataISO+'"/>'+
     '<div class="dica">Pode ser corrigido por mais '+(h!=null?h+'h':'algum tempo')+'.</div>'+
     '<button class="primario" id="eBtn">Salvar correção</button>'+
@@ -488,7 +534,7 @@ function setEditTipo(t,catInicial){
   const tg=document.getElementById('edToggle');
   tg.children[0].style.background=t==='ENTRADA'?'var(--emerald)':'transparent'; tg.children[0].style.color=t==='ENTRADA'?'#fff':'var(--muted)';
   tg.children[1].style.background=t==='SAIDA'?'var(--rose)':'transparent'; tg.children[1].style.color=t==='SAIDA'?'#fff':'var(--muted)';
-  document.getElementById('eCats').innerHTML=CATS[t].map(function(c){ return '<button class="chip '+(c===editCat?'on':'')+'" onclick="editCat=\''+c+'\';document.querySelectorAll(\'#eCats .chip\').forEach(function(x){x.classList.remove(\'on\')});event.target.classList.add(\'on\')">'+c+'</button>'; }).join('');
+  document.getElementById('eCats').innerHTML=CATS[t].map(function(c){ return '<button class="chip '+(c===editCat?'on':'')+'" onclick="editCat=\''+c+'\';setEditTipo(editTipo,\''+c+'\')">'+c+'</button>'; }).join('')+'<button class="chip chipNova" onclick="novaCategoria(\''+t+'\',\'edit\')">+ nova</button>';
 }
 async function salvarEdicao(id){
   const v=parseValor(document.getElementById('ev').value); if(!v||isNaN(v))return;
@@ -573,7 +619,7 @@ function abrirMov(){
     '<label class="campo">Valor</label><input id="mv" inputmode="numeric" placeholder="0,00" oninput="mascaraMoeda(this);previa(\'mv\',\'mPrev\')"/>'+
     '<div id="mPrev" class="previa"></div>'+
     '<label class="campo">Categoria</label><div class="chips" id="mCats"></div>'+
-    '<label class="campo">Descrição / natureza do gasto</label><input id="md" placeholder="Ex: Pagamento Itafarma, retirada Bia"/>'+
+    '<label class="campo">Descrição / natureza do gasto</label><input id="md" list="sugMov" placeholder="Ex: Pagamento Itafarma, retirada Bia"/>'+listaSugestoes('sugMov')+
     '<label class="campo">Data</label><input id="mdata" type="date" value="'+hojeISO()+'"/>'+
     '<button class="primario" id="mBtn">Salvar lançamento</button>',
     function(){ setMovTipo('ENTRADA'); document.getElementById('mv').focus(); document.getElementById('mBtn').onclick=salvarMov; });
@@ -583,7 +629,7 @@ function setMovTipo(t){
   const tg=document.getElementById('movToggle');
   tg.children[0].style.background=t==='ENTRADA'?'var(--emerald)':'transparent';tg.children[0].style.color=t==='ENTRADA'?'#fff':'var(--muted)';
   tg.children[1].style.background=t==='SAIDA'?'var(--rose)':'transparent';tg.children[1].style.color=t==='SAIDA'?'#fff':'var(--muted)';
-  document.getElementById('mCats').innerHTML=CATS[t].map(function(c){ return '<button class="chip '+(c===movCat?'on':'')+'" onclick="movCat=\''+c+'\';document.querySelectorAll(\'#mCats .chip\').forEach(function(x){x.classList.remove(\'on\')});event.target.classList.add(\'on\')">'+c+'</button>'; }).join('');
+  document.getElementById('mCats').innerHTML=CATS[t].map(function(c){ return '<button class="chip '+(c===movCat?'on':'')+'" onclick="movCat=\''+c+'\';setMovTipo(movTipo)">'+c+'</button>'; }).join('')+'<button class="chip chipNova" onclick="novaCategoria(\''+t+'\',\'mov\')">+ nova</button>';
 }
 async function salvarMov(){
   const v=parseValor(document.getElementById('mv').value);if(!v)return;
@@ -739,7 +785,7 @@ function abrirConta(){
   abrirFolha(titulo,
     (boleto?'<label class="foto"><span>'+IC.camera+' Ler boleto por foto</span><input type="file" accept="image/*" capture="environment" onchange="fotoBoleto(event)" style="display:none"/></label><div id="cFoto" class="dica" style="margin:8px 0 2px"></div>':'')+
     '<label class="campo">'+(boleto?'Distribuidor':despesa?'Descrição da despesa':'Cliente / descrição')+'</label>'+
-    '<input id="cd" placeholder="'+(boleto?'Ex: Itafarma':despesa?'Ex: Frete da entrega':'Ex: Convênio X')+'"/>'+
+    '<input id="cd" list="sugConta" placeholder="'+(boleto?'Ex: Itafarma':despesa?'Ex: Frete da entrega':'Ex: Convênio X')+'"/>'+listaSugestoes('sugConta')+
     (despesa?'<label class="campo">Categoria</label><div class="chips" id="dCats"></div>':'')+
     (boleto?'<label class="campo">Linha digitável (opcional — preenche valor e vencimento)</label><input id="cl" inputmode="numeric" oninput="autoLinha()" placeholder="Números do boleto"/>':'')+
     '<label class="campo">Valor</label><input id="cv" inputmode="numeric" placeholder="0,00" oninput="mascaraMoeda(this);previa(\'cv\',\'cPrev\')"/><div id="cPrev" class="previa"></div>'+
@@ -748,9 +794,7 @@ function abrirConta(){
     '<button class="primario" id="cBtn">Salvar</button>',
     function(){
       if(despesa){
-        document.getElementById('dCats').innerHTML=CATS_DESPESA.map(function(c){
-          return '<button class="chip '+(c===despCat?'on':'')+'" onclick="despCat=\''+c+'\';document.querySelectorAll(\'#dCats .chip\').forEach(function(x){x.classList.remove(\'on\')});event.target.classList.add(\'on\')">'+c+'</button>';
-        }).join('');
+        redesenharCatsDespesa();
       }
       document.getElementById('cd').focus();
       document.getElementById('cBtn').onclick=salvarConta;
@@ -814,13 +858,18 @@ async function confirmarBaixa(id){
       categoria:c.categoria||(c.tipo==='PAGAR'?(c.origem==='BOLETO'?'Distribuidor':'Outros'):'Outros'),
       valor:c.valor,
       descricao:c.desc,
-      data_hora:montarDataHora(data)
+      data_hora:montarDataHora(data),
+      conta_id:c.id
     })});
     fecharFolha(); await recarregar();
   }catch(e){ alert(e.message); b.textContent='Confirmar'; b.disabled=false; }
 }
 async function apagarConta(id){
-  if(!confirm('Apagar esta conta?'))return;
+  const c=contas.filter(function(x){return x.id===id})[0];
+  const aviso = (c && c.status==='PAGO')
+    ? 'Apagar esta conta? O lançamento correspondente também sairá do caixa.'
+    : 'Apagar esta conta?';
+  if(!confirm(aviso))return;
   try{ await api('contas?id=eq.'+id,{method:'DELETE'}); await recarregar(); }catch(e){ alert(e.message); }
 }
 
