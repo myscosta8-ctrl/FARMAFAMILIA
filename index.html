@@ -76,6 +76,7 @@
   .primario{width:100%;background:var(--amber);color:var(--pine);border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--i);margin-top:16px}
   .fechar{background:none;border:none;cursor:pointer;padding:4px;font-size:18px;color:var(--muted)}
   .dica{font-size:12px;color:var(--muted);line-height:1.5;margin-top:8px}
+  .previa{font-size:13px;font-weight:600;color:var(--emerald);text-align:center;min-height:18px;margin-top:6px}
   .import{display:flex;align-items:center;justify-content:center;gap:10px;background:var(--amberSoft);border:1px dashed var(--amber);border-radius:12px;padding:13px;font-size:13.5px;font-weight:600;color:var(--pine);cursor:pointer;width:100%}
   .import svg{width:18px;height:18px}
   .foto{display:flex;align-items:center;justify-content:center;gap:10px;background:var(--pine);color:#fff;border-radius:12px;padding:13px;font-size:14.5px;font-weight:600;cursor:pointer;width:100%;margin-bottom:2px}
@@ -199,6 +200,22 @@ async function carregarTudo(){
 // ============================================================
 //  Utilidades
 // ============================================================
+// Lê valores no formato brasileiro com segurança:
+// "1.771,19" -> 1771.19 | "177119" -> 177119 | "1771,19" -> 1771.19
+// "1.771" -> 1771 (ponto de milhar) | "1771.19" -> 1771.19 (ponto decimal)
+function parseValor(txt){
+  let s=String(txt==null?'':txt).trim().replace(/[^\d.,]/g,'');
+  if(!s) return NaN;
+  if(s.indexOf(',')>=0){
+    s=s.replace(/\./g,'').replace(',','.');            // vírgula é o decimal
+  }else{
+    const p=s.split('.');
+    if(p.length>2) s=p.join('');                        // 1.234.567
+    else if(p.length===2 && p[1].length===3) s=p.join(''); // 1.771 = milhar
+  }
+  const n=parseFloat(s);
+  return isNaN(n)?NaN:n;
+}
 function brl(n){ return Number(n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
 function comHora(d){ return String(d).length===10 ? d+'T12:00:00' : d; }
 function dm(d){ return new Date(comHora(d)).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}); }
@@ -371,10 +388,31 @@ function montarDataHora(dataISO){
   if(!dataISO || dataISO===hojeISO()) return new Date().toISOString();
   return new Date(dataISO+'T12:00:00').toISOString();
 }
+// Formata o campo enquanto a pessoa digita, preenchendo vírgula e
+// ponto sozinho. Os dígitos entram pelos centavos, da direita para a
+// esquerda: 1 -> 0,01 | 177 -> 1,77 | 177119 -> 1.771,19
+function mascaraMoeda(el){
+  let d=String(el.value).replace(/\D/g,'').replace(/^0+/,'');
+  if(!d){ el.value=''; return; }
+  if(d.length>11) d=d.slice(0,11);            // limite de segurança
+  const n=parseInt(d,10)/100;
+  el.value=n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+// Preenche um campo de valor já formatado (usado pelo boleto)
+function porValorNoCampo(id,valor){
+  const el=document.getElementById(id); if(!el) return;
+  el.value=Number(valor).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function previa(idCampo,idAviso){
+  const el=document.getElementById(idAviso); if(!el) return;
+  const v=parseValor(document.getElementById(idCampo).value);
+  el.textContent = isNaN(v)||v===0 ? '' : 'Será lançado: '+brl(v);
+}
 function abrirVenda(){
   abrirFolha('Lançar venda',
     '<label class="campo">Valor da venda</label>'+
-    '<input id="vv" inputmode="decimal" placeholder="R$ 0,00" style="font-size:24px;font-family:var(--g);text-align:center"/>'+
+    '<input id="vv" inputmode="numeric" placeholder="0,00" oninput="mascaraMoeda(this);previa(\'vv\',\'vPrev\')" style="font-size:24px;font-family:var(--g);text-align:center"/>'+
+    '<div id="vPrev" class="previa"></div>'+
     '<label class="campo">Data</label><input id="vdata" type="date" value="'+hojeISO()+'"/>'+
     '<button class="primario" id="vBtn">Registrar venda</button>',
     function(){
@@ -384,7 +422,7 @@ function abrirVenda(){
     });
 }
 async function salvarVenda(){
-  const v=parseFloat(String(document.getElementById('vv').value).replace(',','.')); if(!v)return;
+  const v=parseValor(document.getElementById('vv').value); if(!v)return;
   const b=document.getElementById('vBtn'); b.textContent='Salvando…'; b.disabled=true;
   try{
     await api('movimentos',{method:'POST',body:JSON.stringify({
@@ -424,7 +462,8 @@ function abrirMov(){
   movTipo='ENTRADA';movCat='Venda';
   abrirFolha('Novo lançamento',
     '<div class="toggle" id="movToggle"><button onclick="setMovTipo(\'ENTRADA\')">Entrada</button><button onclick="setMovTipo(\'SAIDA\')">Saída</button></div>'+
-    '<label class="campo">Valor</label><input id="mv" inputmode="decimal" placeholder="0,00"/>'+
+    '<label class="campo">Valor</label><input id="mv" inputmode="numeric" placeholder="0,00" oninput="mascaraMoeda(this);previa(\'mv\',\'mPrev\')"/>'+
+    '<div id="mPrev" class="previa"></div>'+
     '<label class="campo">Categoria</label><div class="chips" id="mCats"></div>'+
     '<label class="campo">Descrição / natureza do gasto</label><input id="md" placeholder="Ex: Pagamento Itafarma, retirada Bia"/>'+
     '<label class="campo">Data</label><input id="mdata" type="date" value="'+hojeISO()+'"/>'+
@@ -439,7 +478,7 @@ function setMovTipo(t){
   document.getElementById('mCats').innerHTML=CATS[t].map(function(c){ return '<button class="chip '+(c===movCat?'on':'')+'" onclick="movCat=\''+c+'\';document.querySelectorAll(\'#mCats .chip\').forEach(function(x){x.classList.remove(\'on\')});event.target.classList.add(\'on\')">'+c+'</button>'; }).join('');
 }
 async function salvarMov(){
-  const v=parseFloat(String(document.getElementById('mv').value).replace(',','.'));if(!v)return;
+  const v=parseValor(document.getElementById('mv').value);if(!v)return;
   const b=document.getElementById('mBtn'); b.textContent='Salvando…'; b.disabled=true;
   try{
     await api('movimentos',{method:'POST',body:JSON.stringify({
@@ -582,7 +621,7 @@ function abrirConta(){
     (pagar?'<label class="foto"><span>'+IC.camera+' Ler boleto por foto</span><input type="file" accept="image/*" capture="environment" onchange="fotoBoleto(event)" style="display:none"/></label><div id="cFoto" class="dica" style="margin:8px 0 2px"></div>':'')+
     '<label class="campo">'+(pagar?'Distribuidor / descrição':'Cliente / descrição')+'</label><input id="cd" placeholder="'+(pagar?'Ex: Itafarma':'Ex: Convênio X')+'"/>'+
     (pagar?'<label class="campo">Linha digitável (opcional — preenche valor e vencimento)</label><input id="cl" inputmode="numeric" oninput="autoLinha()" placeholder="Números do boleto"/>':'')+
-    '<label class="campo">Valor</label><input id="cv" inputmode="decimal" placeholder="R$ 0,00"/>'+
+    '<label class="campo">Valor</label><input id="cv" inputmode="numeric" placeholder="0,00" oninput="mascaraMoeda(this);previa(\'cv\',\'cPrev\')"/><div id="cPrev" class="previa"></div>'+
     '<label class="campo">Vencimento</label><input id="cvenc" type="date"/>'+
     (pagar?'<div class="dica">Dica: digitando a linha do boleto, o valor e o vencimento aparecem sozinhos.</div>':'')+
     '<button class="primario" id="cBtn">Salvar</button>',
@@ -595,7 +634,7 @@ async function fotoBoleto(ev){
   aviso.style.color='var(--muted)';
   try{
     const r=await lerBoletoDaFoto(arq);
-    if(r.valor!=null) document.getElementById('cv').value=r.valor.toFixed(2).replace('.',',');
+    if(r.valor!=null){ porValorNoCampo('cv',r.valor); previa('cv','cPrev'); }
     if(r.vencimento) document.getElementById('cvenc').value=r.vencimento.toISOString().slice(0,10);
     aviso.textContent='Lido: '+brl(r.valor)+(r.vencimento?' · vence '+dm(r.vencimento.toISOString().slice(0,10)):'')+'. Confira e informe o distribuidor.';
     aviso.style.color='var(--emerald)';
@@ -608,12 +647,12 @@ async function fotoBoleto(ev){
 function autoLinha(){
   const d=decodificarLinha(document.getElementById('cl').value);
   if(d){
-    if(d.valor!=null)document.getElementById('cv').value=d.valor.toFixed(2).replace('.',',');
+    if(d.valor!=null){ porValorNoCampo('cv',d.valor); previa('cv','cPrev'); }
     if(d.vencimento)document.getElementById('cvenc').value=d.vencimento.toISOString().slice(0,10);
   }
 }
 async function salvarConta(){
-  const v=parseFloat(String(document.getElementById('cv').value).replace(',','.'));
+  const v=parseValor(document.getElementById('cv').value);
   const venc=document.getElementById('cvenc').value;
   if(!v||!venc){alert('Informe valor e vencimento.');return;}
   const el=document.getElementById('cl');
