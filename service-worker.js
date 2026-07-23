@@ -14,6 +14,7 @@ const ARQUIVOS = [
   "./manifest.json",
   "./icone-192.png",
   "./icone-512.png",
+  "./logo.png",
 ];
 
 self.addEventListener("install", (e) => {
