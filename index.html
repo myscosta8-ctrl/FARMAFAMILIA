@@ -100,7 +100,7 @@
   .import svg{width:18px;height:18px}
   .scanner{position:fixed;inset:0;background:#000;z-index:100;display:flex;align-items:center;justify-content:center}
   .scanner video{width:100%;height:100%;object-fit:cover}
-  .scMira{position:absolute;left:6%;right:6%;height:120px;border:3px solid #fff;border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.45)}
+  .scMira{position:absolute;left:8%;right:8%;height:60%;max-height:420px;border:3px solid #fff;border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.45)}
   .scAviso{position:absolute;bottom:110px;left:0;right:0;text-align:center;color:#fff;font-size:14px;font-weight:600;text-shadow:0 1px 4px #000}
   .scFechar{position:absolute;bottom:40px;left:50%;transform:translateX(-50%);background:#fff;color:var(--ink);border:none;border-radius:12px;padding:12px 26px;font-size:15px;font-weight:600;font-family:var(--i);cursor:pointer}
   .fotoAlt{display:block;text-align:center;font-size:12.5px;color:var(--muted);text-decoration:underline;margin-top:8px;cursor:pointer}
@@ -217,6 +217,7 @@ async function carregarTudo(){
     produtos   = (res[1]||[]).map(function(x){ return {id:x.id, desc:x.descricao, codigo:x.codigo_barras||'', estoque:Number(x.estoque), minimo:Number(x.estoque_minimo), validade:x.validade}; });
     contas     = (res[2]||[]).map(function(x){ return {id:x.id, tipo:x.tipo, origem:x.origem||'MANUAL', categoria:x.categoria||'', desc:x.descricao, valor:Number(x.valor), venc:x.vencimento, status:x.status, linha:x.linha_digitavel||''}; });
     montarCategorias(res[3]);
+    carregarBeneficiarios();
     montarHistorico();
     offline=false; guardarCopia();
   }catch(e){
@@ -289,6 +290,47 @@ function alertas(){
   const venc=produtos.filter(function(p){ return p.validade&&diasAte(p.validade)<0&&estoqueDe(p)>0; }).length;
   const cp=contas.filter(function(c){ return c.tipo==='PAGAR'&&c.status!=='PAGO'&&diasAte(c.venc)<=7; });
   return {baixo:baixo,venc:venc,contas:cp.length,contasTotal:cp.reduce(function(s,c){ return s+c.valor; },0),proxima:contasOrd('PAGAR').filter(function(c){ return c.status!=='PAGO'; })[0]};
+}
+// ---- Identificação do beneficiário pelo código de barras ----
+// O nome da distribuidora não vem no código. O que vem é banco + conta.
+// Guardamos essa relação para reconhecer sozinho nos próximos boletos.
+let beneficiarios={};   // chave -> nome
+function campoLivreDe(cb){
+  const d=String(cb).replace(/\D/g,'');
+  return d.length===44 ? d.slice(19,44) : null;
+}
+function chaveBeneficiario(cb){
+  const d=String(cb).replace(/\D/g,'');
+  const cl=campoLivreDe(d);
+  if(!cl) return null;
+  return d.slice(0,3)+'-'+cl.slice(-12);   // banco + parte estável (agência/conta)
+}
+// "Nosso número" — layout conhecido do Itaú (banco 341)
+function documentoDe(cb){
+  const d=String(cb).replace(/\D/g,'');
+  const cl=campoLivreDe(d);
+  if(!cl) return null;
+  if(d.slice(0,3)==='341') return cl.slice(0,3)+'/'+cl.slice(3,11)+'-'+cl.slice(11,12);
+  return cl.slice(0,11);
+}
+async function carregarBeneficiarios(){
+  try{
+    const lista=await api('beneficiarios?select=*');
+    beneficiarios={};
+    (lista||[]).forEach(function(b){ beneficiarios[b.chave]=b.nome; });
+  }catch(e){}
+}
+// Guarda o nome informado, ligado à conta do beneficiário
+async function aprenderBeneficiario(chave,nome){
+  if(!chave||!nome) return;
+  if(beneficiarios[chave]===nome) return;
+  beneficiarios[chave]=nome;
+  try{
+    await api('beneficiarios',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=representation'},
+      body:JSON.stringify({chave:chave,nome:nome})});
+  }catch(e){
+    try{ await api('beneficiarios?chave=eq.'+encodeURIComponent(chave),{method:'PATCH',body:JSON.stringify({nome:nome})}); }catch(e2){}
+  }
 }
 // ---- Vencimento do boleto (fator de vencimento FEBRABAN) ----
 // O contador de 4 dígitos chegou a 9999 em 21/02/2025 e recomeçou em 1000
@@ -804,6 +846,7 @@ function vContas(){
     }).join(''):'<div class="vazio">Nenhum registro aqui. Toque em + para adicionar.</div>');
 }
 let despCat='Frete';
+let ultimoCodigoLido=null;   // código de barras do boleto que acabou de ser lido
 function abrirConta(){
   const boleto = contaAba==='BOLETO';
   const receber = contaAba==='RECEBER';
@@ -848,8 +891,13 @@ async function salvarConta(continuar){
       categoria: despesa?despCat:null,
       descricao:document.getElementById('cd').value.trim()||(boleto?'Boleto':despesa?'Despesa':'Recebimento'),
       valor:v, vencimento:venc, status:'PENDENTE',
-      linha_digitavel:(el&&el.value.replace(/\D/g,''))||null
+      linha_digitavel:(el&&el.value.replace(/\D/g,''))||null,
+      documento: ultimoCodigoLido?documentoDe(ultimoCodigoLido):null
     })});
+    if(boleto && ultimoCodigoLido){
+      await aprenderBeneficiario(chaveBeneficiario(ultimoCodigoLido), document.getElementById('cd').value.trim());
+    }
+    ultimoCodigoLido=null;
     fecharFolha(); await recarregar();
     if(continuar){ abrirConta(); setTimeout(abrirScannerBoleto,120); }
   }catch(e){ alert(e.message); b.textContent='Salvar'; b.disabled=false; }
@@ -884,7 +932,7 @@ async function abrirScannerBoleto(){
   ov.className='scanner'; ov.id='scanner';
   ov.innerHTML='<video id="scVideo" playsinline muted></video>'+
     '<div class="scMira"></div>'+
-    '<div class="scAviso">Aponte para o código de barras</div>'+
+    '<div class="scAviso">Aponte para o código de barras<br><small style="font-weight:400;opacity:.85">funciona na vertical ou na horizontal</small></div>'+
     '<button class="scFechar" onclick="pararScanner()">Cancelar</button>';
   document.body.appendChild(ov);
 
@@ -910,11 +958,34 @@ async function abrirScannerBoleto(){
   }catch(e){}
   const detector=new BarcodeDetector({formats:formatos});
 
+  // Lê alternando entre a imagem normal e girada 90°, para funcionar
+  // com o celular na vertical ou na horizontal, mesmo com a tela travada.
+  const tela=document.createElement('canvas');
+  const ctx=tela.getContext('2d',{willReadFrequently:true});
+  let giro=0;
+
   scannerLoop=setInterval(async function(){
     const v=document.getElementById('scVideo');
     if(!v||v.readyState<2) return;
+    const w=v.videoWidth, h=v.videoHeight;
+    if(!w||!h) return;
+
+    if(giro%2===0){
+      tela.width=w; tela.height=h;
+      ctx.setTransform(1,0,0,1,0,0);
+      ctx.drawImage(v,0,0,w,h);
+    }else{
+      tela.width=h; tela.height=w;
+      ctx.setTransform(1,0,0,1,0,0);
+      ctx.clearRect(0,0,tela.width,tela.height);
+      ctx.translate(h/2,w/2);
+      ctx.rotate(Math.PI/2);
+      ctx.drawImage(v,-w/2,-h/2,w,h);
+    }
+    giro++;
+
     let codigos=[];
-    try{ codigos=await detector.detect(v); }catch(e){ return; }
+    try{ codigos=await detector.detect(tela); }catch(e){ return; }
     for(let i=0;i<codigos.length;i++){
       const d=String(codigos[i].rawValue||'').replace(/\D/g,'');
       let r=null;
@@ -927,7 +998,7 @@ async function abrirScannerBoleto(){
         return;
       }
     }
-  },350);
+  },250);
 }
 
 function pararScanner(){
@@ -942,12 +1013,29 @@ function aplicarLeitura(r,digitos){
   if(r.vencimento){ const cvc=document.getElementById('cvenc'); if(cvc) cvc.value=r.vencimento.toISOString().slice(0,10); }
   const cl=document.getElementById('cl');
   if(cl && digitos && digitos.length===47) cl.value=digitos;
+
+  // guarda o código de barras (converte da linha, se for o caso)
+  let cb=null;
+  if(digitos && digitos.length===44) cb=digitos;
+  else if(digitos && digitos.length===47) cb=linhaParaBarras(digitos);
+  ultimoCodigoLido=cb;
+
+  let extra='';
+  if(cb){
+    const doc=documentoDe(cb);
+    if(doc) extra+=' · nº '+doc;
+    const chave=chaveBeneficiario(cb);
+    const nome=chave?beneficiarios[chave]:null;
+    const cd=document.getElementById('cd');
+    if(nome && cd && !cd.value){ cd.value=nome; extra+=' · '+nome; }
+  }
   const aviso=document.getElementById('cFoto');
   if(aviso){
-    aviso.textContent='Lido: '+brl(r.valor)+(r.vencimento?' · vence '+dm(r.vencimento.toISOString().slice(0,10)):'')+'. Informe o distribuidor e salve.';
+    aviso.textContent='Lido: '+brl(r.valor)+(r.vencimento?' · vence '+dm(r.vencimento.toISOString().slice(0,10)):'')+extra;
     aviso.style.color='var(--emerald)';
   }
-  const cd=document.getElementById('cd'); if(cd && !cd.value) cd.focus();
+  const cd2=document.getElementById('cd');
+  if(cd2 && !cd2.value) cd2.focus();
 }
 
 // Alternativa: ler a partir de uma foto (quando a câmera ao vivo não funcionar)
@@ -1018,6 +1106,12 @@ function autoLinha(){
     if(aviso){ aviso.style.color='var(--rose)'; aviso.textContent='Não consegui interpretar esses números.'; }
     return;
   }
+  const digitos=String(campo.value).replace(/\D/g,'');
+  aplicarLeitura(r.dados, digitos);
+  if(r.dvOk===false){
+    if(aviso){ aviso.style.color='var(--rose)'; aviso.textContent='Atenção: os números não batem no dígito verificador. Confira antes de salvar.'; }
+  }
+  return;
   if(r.dados.valor!=null){ porValorNoCampo('cv',r.dados.valor); previa('cv','cPrev'); }
   if(r.dados.vencimento){ const cvc=document.getElementById('cvenc'); if(cvc) cvc.value=r.dados.vencimento.toISOString().slice(0,10); }
   if(aviso){
@@ -1045,8 +1139,13 @@ async function salvarConta(continuar){
       categoria: despesa?despCat:null,
       descricao:document.getElementById('cd').value.trim()||(boleto?'Boleto':despesa?'Despesa':'Recebimento'),
       valor:v, vencimento:venc, status:'PENDENTE',
-      linha_digitavel:(el&&el.value.replace(/\D/g,''))||null
+      linha_digitavel:(el&&el.value.replace(/\D/g,''))||null,
+      documento: ultimoCodigoLido?documentoDe(ultimoCodigoLido):null
     })});
+    if(boleto && ultimoCodigoLido){
+      await aprenderBeneficiario(chaveBeneficiario(ultimoCodigoLido), document.getElementById('cd').value.trim());
+    }
+    ultimoCodigoLido=null;
     fecharFolha(); await recarregar();
     if(continuar){ abrirConta(); setTimeout(abrirScannerBoleto,120); }
   }catch(e){ alert(e.message); b.textContent='Salvar'; b.disabled=false; }
