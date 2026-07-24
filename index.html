@@ -98,6 +98,12 @@
   .btnExcluir{width:100%;background:transparent;color:var(--rose);border:1px solid #F0C4CB;border-radius:12px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--i);margin-top:10px}
   .import{display:flex;align-items:center;justify-content:center;gap:10px;background:var(--amberSoft);border:1px dashed var(--pineSoft);border-radius:12px;padding:13px;font-size:13.5px;font-weight:600;color:var(--pine);cursor:pointer;width:100%}
   .import svg{width:18px;height:18px}
+  .scanner{position:fixed;inset:0;background:#000;z-index:100;display:flex;align-items:center;justify-content:center}
+  .scanner video{width:100%;height:100%;object-fit:cover}
+  .scMira{position:absolute;left:6%;right:6%;height:120px;border:3px solid #fff;border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.45)}
+  .scAviso{position:absolute;bottom:110px;left:0;right:0;text-align:center;color:#fff;font-size:14px;font-weight:600;text-shadow:0 1px 4px #000}
+  .scFechar{position:absolute;bottom:40px;left:50%;transform:translateX(-50%);background:#fff;color:var(--ink);border:none;border-radius:12px;padding:12px 26px;font-size:15px;font-weight:600;font-family:var(--i);cursor:pointer}
+  .fotoAlt{display:block;text-align:center;font-size:12.5px;color:var(--muted);text-decoration:underline;margin-top:8px;cursor:pointer}
   .foto{display:flex;align-items:center;justify-content:center;gap:10px;background:var(--pine);color:#fff;border-radius:12px;padding:13px;font-size:14.5px;font-weight:600;cursor:pointer;width:100%;margin-bottom:2px}
   .foto svg{width:19px;height:19px;vertical-align:-4px;margin-right:2px}
 
@@ -783,7 +789,9 @@ function abrirConta(){
   despCat='Frete';
   const titulo = boleto?'Adicionar boleto' : despesa?'Adicionar despesa' : 'Adicionar conta a receber';
   abrirFolha(titulo,
-    (boleto?'<label class="foto"><span>'+IC.camera+' Ler boleto por foto</span><input type="file" accept="image/*" capture="environment" onchange="fotoBoleto(event)" style="display:none"/></label><div id="cFoto" class="dica" style="margin:8px 0 2px"></div>':'')+
+    (boleto?'<button type="button" class="foto" onclick="abrirScannerBoleto()">'+IC.camera+' Ler código de barras</button>'+
+     '<label class="fotoAlt"><span>ou enviar uma foto do boleto</span><input type="file" accept="image/*" capture="environment" onchange="fotoBoleto(event)" style="display:none"/></label>'+
+     '<div id="cFoto" class="dica" style="margin:8px 0 2px"></div>':'')+
     '<label class="campo">'+(boleto?'Distribuidor':despesa?'Descrição da despesa':'Cliente / descrição')+'</label>'+
     '<input id="cd" list="sugConta" placeholder="'+(boleto?'Ex: Itafarma':despesa?'Ex: Frete da entrega':'Ex: Convênio X')+'"/>'+listaSugestoes('sugConta')+
     (despesa?'<label class="campo">Categoria</label><div class="chips" id="dCats"></div>':'')+
@@ -791,16 +799,19 @@ function abrirConta(){
     '<label class="campo">Valor</label><input id="cv" inputmode="numeric" placeholder="0,00" oninput="mascaraMoeda(this);previa(\'cv\',\'cPrev\')"/><div id="cPrev" class="previa"></div>'+
     '<label class="campo">'+(despesa?'Data / vencimento':'Vencimento')+'</label><input id="cvenc" type="date" value="'+(despesa?hojeISO():'')+'"/>'+
     (boleto?'<div class="dica">Fotografe o boleto ou digite a linha — o valor e o vencimento aparecem sozinhos.</div>':'')+
-    '<button class="primario" id="cBtn">Salvar</button>',
+    '<button class="primario" id="cBtn">Salvar</button>'+
+    (boleto?'<button class="btnS" style="width:100%;margin-top:10px" id="cBtn2">Salvar e ler o próximo</button>':''),
     function(){
       if(despesa){
         redesenharCatsDespesa();
       }
       document.getElementById('cd').focus();
-      document.getElementById('cBtn').onclick=salvarConta;
+      document.getElementById('cBtn').onclick=function(){ salvarConta(false); };
+      const b2=document.getElementById('cBtn2');
+      if(b2) b2.onclick=function(){ salvarConta(true); };
     });
 }
-async function salvarConta(){
+async function salvarConta(continuar){
   const v=parseValor(document.getElementById('cv').value);
   const venc=document.getElementById('cvenc').value;
   if(!v||isNaN(v)||!venc){alert('Informe valor e data.');return;}
@@ -818,8 +829,102 @@ async function salvarConta(){
       linha_digitavel:(el&&el.value.replace(/\D/g,''))||null
     })});
     fecharFolha(); await recarregar();
+    if(continuar){ abrirConta(); setTimeout(abrirScannerBoleto,120); }
   }catch(e){ alert(e.message); b.textContent='Salvar'; b.disabled=false; }
 }
+// ---------- Leitura do boleto: câmera ao vivo (rápida) ----------
+let scannerStream=null, scannerLoop=null;
+function suportaLeitura(){ return ('BarcodeDetector' in window) && navigator.mediaDevices && navigator.mediaDevices.getUserMedia; }
+
+async function abrirScannerBoleto(){
+  if(!suportaLeitura()){
+    alert('Este navegador não lê código de barras ao vivo. Use o Chrome no Android, tire uma foto ou digite a linha do boleto.');
+    return;
+  }
+  const ov=document.createElement('div');
+  ov.className='scanner'; ov.id='scanner';
+  ov.innerHTML='<video id="scVideo" playsinline muted></video>'+
+    '<div class="scMira"></div>'+
+    '<div class="scAviso">Aponte para o código de barras</div>'+
+    '<button class="scFechar" onclick="pararScanner()">Cancelar</button>';
+  document.body.appendChild(ov);
+
+  try{
+    scannerStream=await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:{ideal:'environment'}, width:{ideal:1280}, height:{ideal:720} }
+    });
+  }catch(e){
+    pararScanner();
+    alert('Não consegui abrir a câmera. Verifique a permissão do navegador.');
+    return;
+  }
+  const video=document.getElementById('scVideo');
+  if(!video){ pararScanner(); return; }
+  video.srcObject=scannerStream;
+  try{ await video.play(); }catch(e){}
+
+  let formatos=['itf','code_128','codabar','code_39'];
+  try{
+    const sup=await BarcodeDetector.getSupportedFormats();
+    const f=formatos.filter(function(x){ return sup.indexOf(x)>=0; });
+    if(f.length) formatos=f;
+  }catch(e){}
+  const detector=new BarcodeDetector({formats:formatos});
+
+  scannerLoop=setInterval(async function(){
+    const v=document.getElementById('scVideo');
+    if(!v||v.readyState<2) return;
+    let codigos=[];
+    try{ codigos=await detector.detect(v); }catch(e){ return; }
+    for(let i=0;i<codigos.length;i++){
+      const d=String(codigos[i].rawValue||'').replace(/\D/g,'');
+      let r=null;
+      if(d.length===44) r=decodificarCodigoBarras(d);
+      else if(d.length===47) r=decodificarLinha(d);
+      if(r && r.valor){
+        if(navigator.vibrate) navigator.vibrate(60);
+        pararScanner();
+        aplicarLeitura(r,d);
+        return;
+      }
+    }
+  },350);
+}
+
+function pararScanner(){
+  if(scannerLoop){ clearInterval(scannerLoop); scannerLoop=null; }
+  if(scannerStream){ scannerStream.getTracks().forEach(function(t){ t.stop(); }); scannerStream=null; }
+  const ov=document.getElementById('scanner'); if(ov) ov.remove();
+}
+
+// Preenche o formulário com o que foi lido do boleto
+function aplicarLeitura(r,digitos){
+  if(r.valor!=null){ porValorNoCampo('cv',r.valor); previa('cv','cPrev'); }
+  if(r.vencimento){ const cvc=document.getElementById('cvenc'); if(cvc) cvc.value=r.vencimento.toISOString().slice(0,10); }
+  const cl=document.getElementById('cl');
+  if(cl && digitos && digitos.length===47) cl.value=digitos;
+  const aviso=document.getElementById('cFoto');
+  if(aviso){
+    aviso.textContent='Lido: '+brl(r.valor)+(r.vencimento?' · vence '+dm(r.vencimento.toISOString().slice(0,10)):'')+'. Informe o distribuidor e salve.';
+    aviso.style.color='var(--emerald)';
+  }
+  const cd=document.getElementById('cd'); if(cd && !cd.value) cd.focus();
+}
+
+// Alternativa: ler a partir de uma foto (quando a câmera ao vivo não funcionar)
+async function fotoBoleto(ev){
+  const arq=ev.target.files[0]; if(!arq)return;
+  const aviso=document.getElementById('cFoto');
+  if(aviso){ aviso.innerHTML='<span class="girando">◜</span> Lendo o boleto…'; aviso.style.color='var(--muted)'; }
+  try{
+    const r=await lerBoletoDaFoto(arq);
+    aplicarLeitura(r,null);
+  }catch(e){
+    if(aviso){ aviso.textContent=e.message; aviso.style.color='var(--rose)'; }
+  }
+  ev.target.value='';
+}
+
 function autoLinha(){
   const d=decodificarLinha(document.getElementById('cl').value);
   if(d){
@@ -972,7 +1077,7 @@ function abrirFolha(titulo,html,apos){
   ov.innerHTML='<div class="folha"><div class="folhaTopo"><span class="folhaTitulo">'+titulo+'</span><button class="fechar" onclick="fecharFolha()">✕</button></div>'+html+'</div>';
   document.body.appendChild(ov); if(apos) apos();
 }
-function fecharFolha(){ const o=document.getElementById('overlay'); if(o) o.remove(); }
+function fecharFolha(){ pararScanner(); const o=document.getElementById('overlay'); if(o) o.remove(); }
 
 // ============================================================
 //  Início
