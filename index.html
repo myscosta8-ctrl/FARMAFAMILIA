@@ -86,6 +86,12 @@
   .primario{width:100%;background:var(--amber);color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--i);margin-top:16px}
   .fechar{background:none;border:none;cursor:pointer;padding:4px;font-size:18px;color:var(--muted)}
   .dica{font-size:12px;color:var(--muted);line-height:1.5;margin-top:8px}
+  .cmpLinha{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px}
+  .cmpRot{font-size:13.5px;font-weight:500}
+  .cmpVals{display:flex;align-items:center;gap:8px;margin-top:5px;font-size:13px;color:var(--muted);flex-wrap:wrap}
+  .cmpVals strong{font-family:var(--g);font-size:14.5px;color:var(--ink)}
+  .cmpSeta{opacity:.5}
+  .cmpVar{margin-left:auto;font-weight:700;font-family:var(--g);font-size:13px}
   .catLinha{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px;cursor:pointer}
   .catTopo{display:flex;justify-content:space-between;align-items:center;font-size:13.5px}
   .catTopo strong{font-family:var(--g);font-size:14.5px}
@@ -215,7 +221,7 @@ async function carregarTudo(){
     ]);
     movimentos = (res[0]||[]).map(function(x){ return {id:x.id, ts:new Date(x.data_hora).getTime(), tipo:x.tipo, categoria:x.categoria, valor:Number(x.valor), desc:x.descricao, criadoEm:x.criado_em?new Date(x.criado_em).getTime():null}; });
     produtos   = (res[1]||[]).map(function(x){ return {id:x.id, desc:x.descricao, codigo:x.codigo_barras||'', estoque:Number(x.estoque), minimo:Number(x.estoque_minimo), validade:x.validade}; });
-    contas     = (res[2]||[]).map(function(x){ return {id:x.id, tipo:x.tipo, origem:x.origem||'MANUAL', categoria:x.categoria||'', desc:x.descricao, valor:Number(x.valor), venc:x.vencimento, status:x.status, linha:x.linha_digitavel||''}; });
+    contas     = (res[2]||[]).map(function(x){ return {id:x.id, tipo:x.tipo, origem:x.origem||'MANUAL', categoria:x.categoria||'', desc:x.descricao, valor:Number(x.valor), venc:x.vencimento, status:x.status, linha:x.linha_digitavel||'', documento:x.documento||''}; });
     montarCategorias(res[3]);
     carregarBeneficiarios();
     montarHistorico();
@@ -290,6 +296,384 @@ function alertas(){
   const venc=produtos.filter(function(p){ return p.validade&&diasAte(p.validade)<0&&estoqueDe(p)>0; }).length;
   const cp=contas.filter(function(c){ return c.tipo==='PAGAR'&&c.status!=='PAGO'&&diasAte(c.venc)<=7; });
   return {baixo:baixo,venc:venc,contas:cp.length,contasTotal:cp.reduce(function(s,c){ return s+c.valor; },0),proxima:contasOrd('PAGAR').filter(function(c){ return c.status!=='PAGO'; })[0]};
+}
+// ---- Busca de lançamentos e contas ----
+let buscaTexto='', buscaDe='', buscaAte='', buscaTipo='TODOS';
+function abrirBusca(){
+  abrirFolha('Buscar lançamentos',
+    '<input id="bqTexto" placeholder="Distribuidora, descrição, categoria ou valor" value="'+(buscaTexto||'')+'" oninput="buscaTexto=this.value;resultadosBusca()"/>'+
+    '<div class="chips" style="margin-top:10px">'+
+      [['TODOS','Tudo'],['SAIDA','Saídas'],['ENTRADA','Entradas'],['CONTAS','Contas']].map(function(t){
+        return '<button class="chip '+(buscaTipo===t[0]?'on':'')+'" onclick="buscaTipo=\''+t[0]+'\';abrirBuscaMantendo()">'+t[1]+'</button>';
+      }).join('')+
+    '</div>'+
+    '<div class="duo" style="margin-top:6px">'+
+      '<div style="flex:1"><label class="campo">De</label><input type="date" value="'+buscaDe+'" onchange="buscaDe=this.value;resultadosBusca()"/></div>'+
+      '<div style="flex:1"><label class="campo">Até</label><input type="date" value="'+buscaAte+'" onchange="buscaAte=this.value;resultadosBusca()"/></div>'+
+    '</div>'+
+    '<div id="bqRes" style="margin-top:12px"></div>',
+    function(){ resultadosBusca(); const e=document.getElementById('bqTexto'); if(e) e.focus(); });
+}
+function abrirBuscaMantendo(){ fecharFolha(); abrirBusca(); }
+
+function resultadosBusca(){
+  const alvo=document.getElementById('bqRes'); if(!alvo) return;
+  const q=(buscaTexto||'').trim().toLowerCase();
+  const qNum=parseValor(buscaTexto);
+  const de=buscaDe?new Date(buscaDe+'T00:00:00').getTime():null;
+  const ate=buscaAte?new Date(buscaAte+'T00:00:00').getTime()+86400000:null;
+
+  function combina(texto,valor,ts){
+    if(de && ts<de) return false;
+    if(ate && ts>=ate) return false;
+    if(!q) return true;
+    if(String(texto||'').toLowerCase().indexOf(q)>=0) return true;
+    if(!isNaN(qNum) && Math.abs(valor-qNum)<0.005) return true;
+    return false;
+  }
+
+  let itens=[];
+  if(buscaTipo!=='CONTAS'){
+    movimentos.forEach(function(m){
+      if(buscaTipo==='SAIDA'&&m.tipo!=='SAIDA') return;
+      if(buscaTipo==='ENTRADA'&&m.tipo!=='ENTRADA') return;
+      if(combina((m.desc||'')+' '+(m.categoria||''), m.valor, m.ts))
+        itens.push({tipo:'mov', id:m.id, ts:m.ts, titulo:m.desc||m.categoria||'Lançamento',
+                    sub:(m.categoria||'')+' · '+dm(new Date(m.ts).toISOString().slice(0,10)),
+                    valor:m.valor, entrada:m.tipo==='ENTRADA'});
+    });
+  }
+  if(buscaTipo==='TODOS'||buscaTipo==='CONTAS'){
+    contas.forEach(function(c){
+      const ts=new Date(c.venc+'T12:00:00').getTime();
+      if(combina((c.desc||'')+' '+(c.categoria||'')+' '+(c.documento||''), c.valor, ts))
+        itens.push({tipo:'conta', id:c.id, ts:ts, titulo:c.desc,
+                    sub:(c.status==='PAGO'?'Pago':'Em aberto')+' · vence '+dm(c.venc)+(c.documento?' · nº '+c.documento:''),
+                    valor:c.valor, entrada:c.tipo==='RECEBER'});
+    });
+  }
+  itens.sort(function(a,b){ return b.ts-a.ts; });
+
+  const total=itens.reduce(function(s,x){ return s+(x.entrada?x.valor:-x.valor); },0);
+  const soma=itens.reduce(function(s,x){ return s+x.valor; },0);
+
+  if(!itens.length){ alvo.innerHTML='<div class="vazio">Nada encontrado. Tente outra palavra ou limpe as datas.</div>'; return; }
+
+  alvo.innerHTML='<div class="totalAberto"><span>'+itens.length+' resultado(s)</span><strong>'+brl(soma)+'</strong></div>'+
+    itens.slice(0,80).map(function(x){
+      return '<div class="item" style="margin-top:8px'+(x.tipo==='mov'?';cursor:pointer" onclick="fecharFolha();abrirEditar(\''+x.id+'\')':'"')+'>'+
+        '<div style="flex:1"><div style="font-size:14px;font-weight:500">'+x.titulo+'</div>'+
+        '<div style="font-size:11.5px;color:var(--muted)">'+x.sub+'</div></div>'+
+        '<div class="val2" style="color:'+(x.entrada?'var(--emerald)':'var(--rose)')+'">'+brl(x.valor)+'</div></div>';
+    }).join('')+
+    (itens.length>80?'<div class="dica">Mostrando os 80 mais recentes. Refine a busca para ver menos.</div>':'');
+}
+// Varre o que já está cadastrado e mostra possíveis repetições
+function conferirDuplicados(){
+  const achados=[];
+  for(let i=0;i<contas.length;i++){
+    for(let j=i+1;j<contas.length;j++){
+      const a=contas[i], b=contas[j];
+      let motivo=null;
+      if(a.documento && b.documento && a.documento===b.documento) motivo='mesmo número de boleto';
+      else if(a.linha && b.linha && a.linha===b.linha) motivo='mesma linha digitável';
+      else if(Math.abs(a.valor-b.valor)<0.005 && a.venc===b.venc && textoIgual(a.desc,b.desc)) motivo='mesmo valor, vencimento e descrição';
+      if(motivo) achados.push({a:a,b:b,motivo:motivo,tipo:'Conta'});
+    }
+  }
+  for(let i=0;i<movimentos.length;i++){
+    for(let j=i+1;j<movimentos.length;j++){
+      const a=movimentos[i], b=movimentos[j];
+      if(a.tipo!==b.tipo) continue;
+      if(Math.abs(a.valor-b.valor)>=0.005) continue;
+      if(new Date(a.ts).toISOString().slice(0,10)!==new Date(b.ts).toISOString().slice(0,10)) continue;
+      if(!textoIgual(a.desc,b.desc)) continue;
+      achados.push({a:{desc:a.desc,valor:a.valor,venc:new Date(a.ts).toISOString().slice(0,10)},
+                    b:{desc:b.desc,valor:b.valor,venc:new Date(b.ts).toISOString().slice(0,10)},
+                    motivo:'mesmo dia, valor e descrição', tipo:'Lançamento', idB:b.id});
+    }
+  }
+  abrirFolha('Conferência de repetidos',
+    achados.length
+      ? '<div class="totalAberto"><span>'+achados.length+' possível(is) repetição(ões)</span></div>'+
+        achados.slice(0,40).map(function(x){
+          return '<div class="item" style="margin-top:8px;display:block">'+
+            '<div style="font-size:14px;font-weight:500">'+x.a.desc+' — '+brl(x.a.valor)+'</div>'+
+            '<div style="font-size:11.5px;color:var(--muted);margin-top:3px">'+x.tipo+' · '+x.motivo+' · '+dm(x.a.venc)+'</div>'+
+            (x.idB?'<button class="pagarBtn" style="color:var(--rose);background:#FDECEC;margin-top:6px" onclick="apagarMov(\''+x.idB+'\')">Excluir a segunda cópia</button>':'')+
+          '</div>';
+        }).join('')
+      : '<div class="vazio">Nenhuma repetição encontrada. Está tudo certo.</div>');
+}
+// ============================================================
+//  1) RECLASSIFICAR CATEGORIAS EM MASSA
+// ============================================================
+function abrirReclassificar(){
+  const grupos={};
+  movimentos.forEach(function(m){
+    if(m.tipo!=='SAIDA') return;
+    const k=(m.desc||'(sem descrição)');
+    if(!grupos[k]) grupos[k]={desc:k, qtd:0, total:0, cats:{}};
+    grupos[k].qtd++; grupos[k].total+=m.valor;
+    const c=m.categoria||'Outros';
+    grupos[k].cats[c]=(grupos[k].cats[c]||0)+1;
+  });
+  const lista=Object.keys(grupos).map(function(k){ return grupos[k]; })
+    .sort(function(a,b){ return b.total-a.total; });
+
+  abrirFolha('Reclassificar categorias',
+    '<div class="dica" style="margin-top:0">Toque num item para trocar a categoria de <b>todos</b> os lançamentos com aquela descrição.</div>'+
+    lista.map(function(g){
+      const cats=Object.keys(g.cats);
+      const catAtual=cats.length===1?cats[0]:cats.join(' / ');
+      return '<div class="item" style="margin-top:8px;cursor:pointer" onclick="trocarCategoriaGrupo(\''+encodeURIComponent(g.desc)+'\')">'+
+        '<div style="flex:1"><div style="font-size:14px;font-weight:500">'+g.desc+'</div>'+
+        '<div style="font-size:11.5px;color:var(--muted)">'+g.qtd+'x · '+catAtual+'</div></div>'+
+        '<div class="val2">'+brl(g.total)+'</div></div>';
+    }).join(''));
+}
+let grupoAlvo=null;
+function trocarCategoriaGrupo(descEnc){
+  grupoAlvo=decodeURIComponent(descEnc);
+  fecharFolha();
+  abrirFolha('Categoria de: '+grupoAlvo,
+    '<div class="chips" id="rcCats"></div>'+
+    '<div class="dica">A mudança vale para todos os lançamentos com essa descrição.</div>',
+    function(){
+      document.getElementById('rcCats').innerHTML=CATS.SAIDA.map(function(c){
+        return '<button class="chip" onclick="aplicarCategoriaGrupo(\''+c+'\')">'+c+'</button>';
+      }).join('')+'<button class="chip chipNova" onclick="novaCategoria(\'SAIDA\',\'grupo\')">+ nova</button>';
+    });
+}
+async function aplicarCategoriaGrupo(cat){
+  if(!grupoAlvo) return;
+  const alvos=movimentos.filter(function(m){ return m.tipo==='SAIDA' && (m.desc||'(sem descrição)')===grupoAlvo; });
+  if(!alvos.length) return;
+  if(!confirm('Marcar '+alvos.length+' lançamento(s) de "'+grupoAlvo+'" como "'+cat+'"?')) return;
+  try{
+    for(let i=0;i<alvos.length;i++){
+      await api('movimentos?id=eq.'+alvos[i].id,{method:'PATCH',body:JSON.stringify({categoria:cat})});
+    }
+    fecharFolha(); await recarregar();
+    alert(alvos.length+' lançamento(s) reclassificado(s) como "'+cat+'".');
+  }catch(e){ alert(e.message); }
+}
+
+// ============================================================
+//  2) CONTAS RECORRENTES
+// ============================================================
+let recorrentes=[];
+async function carregarRecorrentes(){
+  try{ recorrentes=await api('recorrentes?select=*&order=descricao.asc')||[]; }catch(e){ recorrentes=[]; }
+}
+function competenciaAtual(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+
+// Gera as contas do mês corrente que ainda não existem
+async function gerarRecorrentes(){
+  const comp=competenciaAtual();
+  const [ano,mes]=comp.split('-').map(Number);
+  let criadas=0;
+  for(let i=0;i<recorrentes.length;i++){
+    const r=recorrentes[i];
+    if(!r.ativo || r.ultimo_mes===comp) continue;
+    const ultimoDia=new Date(ano,mes,0).getDate();
+    const dia=Math.min(r.dia,ultimoDia);
+    const venc=ano+'-'+String(mes).padStart(2,'0')+'-'+String(dia).padStart(2,'0');
+    try{
+      await api('contas',{method:'POST',body:JSON.stringify({
+        tipo:r.tipo, origem:r.origem, categoria:r.categoria,
+        descricao:r.descricao, valor:r.valor, vencimento:venc,
+        status:'PENDENTE', recorrente_id:r.id, competencia:comp
+      })});
+      await api('recorrentes?id=eq.'+r.id,{method:'PATCH',body:JSON.stringify({ultimo_mes:comp})});
+      criadas++;
+    }catch(e){ /* já existe: índice único impede duplicar */ }
+  }
+  if(criadas){ await carregarRecorrentes(); await recarregar(); }
+  return criadas;
+}
+
+function abrirRecorrentes(){
+  abrirFolha('Contas de todo mês',
+    '<div class="dica" style="margin-top:0">Cadastre uma vez. Todo mês o app cria a conta sozinho.</div>'+
+    (recorrentes.length?recorrentes.map(function(r){
+      return '<div class="item" style="margin-top:8px"><div style="flex:1">'+
+        '<div style="font-size:14px;font-weight:500">'+r.descricao+'</div>'+
+        '<div style="font-size:11.5px;color:var(--muted)">todo dia '+r.dia+(r.categoria?' · '+r.categoria:'')+(r.ativo?'':' · pausada')+'</div></div>'+
+        '<div style="text-align:right"><div class="val2">'+brl(r.valor)+'</div>'+
+        '<button class="lixo" onclick="apagarRecorrente(\''+r.id+'\')">'+IC.lixo+'</button></div></div>';
+    }).join(''):'<div class="vazio">Nenhuma conta recorrente ainda.</div>')+
+    '<button class="primario" onclick="abrirNovaRecorrente()">Adicionar conta recorrente</button>');
+}
+let recCat='Outros';
+function abrirNovaRecorrente(){
+  recCat='Outros'; fecharFolha();
+  abrirFolha('Nova conta de todo mês',
+    '<label class="campo">Descrição</label><input id="rd" list="sugConta2" placeholder="Ex: Aluguel, Internet, Energia"/>'+listaSugestoes('sugConta2')+
+    '<label class="campo">Valor</label><input id="rv" inputmode="numeric" placeholder="0,00" oninput="mascaraMoeda(this);previa(\'rv\',\'rPrev\')"/><div id="rPrev" class="previa"></div>'+
+    '<label class="campo">Vence todo dia</label><input id="rdia" type="number" min="1" max="31" value="10"/>'+
+    '<label class="campo">Categoria</label><div class="chips" id="rCats"></div>'+
+    '<button class="primario" id="rBtn">Salvar</button>',
+    function(){
+      document.getElementById('rCats').innerHTML=CATS.SAIDA.map(function(c){
+        return '<button class="chip '+(c===recCat?'on':'')+'" onclick="recCat=\''+c+'\';document.querySelectorAll(\'#rCats .chip\').forEach(function(x){x.classList.remove(\'on\')});event.target.classList.add(\'on\')">'+c+'</button>';
+      }).join('');
+      document.getElementById('rd').focus();
+      document.getElementById('rBtn').onclick=salvarRecorrente;
+    });
+}
+async function salvarRecorrente(){
+  const d=document.getElementById('rd').value.trim();
+  const v=parseValor(document.getElementById('rv').value);
+  const dia=Number(document.getElementById('rdia').value||0);
+  if(!d||!v||isNaN(v)||dia<1||dia>31){ alert('Preencha descrição, valor e dia (1 a 31).'); return; }
+  const b=document.getElementById('rBtn'); b.textContent='Salvando…'; b.disabled=true;
+  try{
+    await api('recorrentes',{method:'POST',body:JSON.stringify({
+      descricao:d, valor:v, dia:dia, categoria:recCat, tipo:'PAGAR', origem:'MANUAL'
+    })});
+    await carregarRecorrentes();
+    const n=await gerarRecorrentes();
+    fecharFolha();
+    alert('Conta recorrente criada.'+(n?' A conta deste mês já foi gerada.':''));
+  }catch(e){ alert(e.message); b.textContent='Salvar'; b.disabled=false; }
+}
+async function apagarRecorrente(id){
+  if(!confirm('Parar de gerar esta conta todo mês?\n\nAs contas já criadas continuam.')) return;
+  try{ await api('recorrentes?id=eq.'+id,{method:'DELETE'}); await carregarRecorrentes(); fecharFolha(); abrirRecorrentes(); }
+  catch(e){ alert(e.message); }
+}
+
+// ============================================================
+//  3) AVISO DE VENCIMENTO
+// ============================================================
+function contasVencendo(dias){
+  const limite=Date.now()+dias*86400000;
+  return contas.filter(function(c){
+    return c.tipo==='PAGAR' && c.status!=='PAGO' && new Date(c.venc+'T12:00:00').getTime()<=limite;
+  });
+}
+async function pedirPermissaoAviso(){
+  if(!('Notification' in window)){ alert('Este navegador não envia avisos.'); return; }
+  const p=await Notification.requestPermission();
+  if(p==='granted'){ try{ localStorage.setItem('avisos','1'); }catch(e){}; avisarVencimentos(true); }
+  else alert('Permissão negada. Você pode liberar nas configurações do navegador.');
+}
+function avisosLigados(){ try{ return localStorage.getItem('avisos')==='1'; }catch(e){ return false; } }
+function avisarVencimentos(forcar){
+  if(!('Notification' in window) || Notification.permission!=='granted') return;
+  if(!avisosLigados() && !forcar) return;
+  const hoje=hojeISO();
+  try{ if(!forcar && localStorage.getItem('avisoDia')===hoje) return; }catch(e){}
+  const venc=contasVencendo(2);
+  const atras=contas.filter(function(c){ return c.tipo==='PAGAR'&&c.status!=='PAGO'&&diasAte(c.venc)<0; });
+  if(!venc.length && !atras.length) { if(forcar) alert('Nenhuma conta vencendo nos próximos dias.'); return; }
+  const total=venc.reduce(function(s,c){ return s+c.valor; },0);
+  let corpo='';
+  if(venc.length) corpo+=venc.length+' conta(s) vencendo — '+brl(total);
+  if(atras.length) corpo+=(corpo?' · ':'')+atras.length+' em atraso';
+  try{
+    new Notification('Farma Família', { body:corpo, icon:'icone-192.png', badge:'icone-192.png', tag:'vencimentos' });
+    localStorage.setItem('avisoDia',hoje);
+  }catch(e){}
+}
+
+// ============================================================
+//  4) COMPARATIVO ENTRE MESES
+// ============================================================
+function limitesMes(ano,mes){                 // mes: 1-12
+  return [new Date(ano,mes-1,1).getTime(), new Date(ano,mes,1).getTime()];
+}
+function resumoMes(ano,mes){
+  const iv=limitesMes(ano,mes);
+  const ent=somaMov('ENTRADA',iv[0],iv[1]);
+  const sai=somaMov('SAIDA',iv[0],iv[1]);
+  const vendas=somaMov('ENTRADA',iv[0],iv[1],'Venda');
+  const cats={};
+  movimentos.forEach(function(m){
+    if(m.tipo!=='SAIDA'||m.ts<iv[0]||m.ts>=iv[1]) return;
+    const c=m.categoria||'Outros'; cats[c]=(cats[c]||0)+m.valor;
+  });
+  return {ent:ent, sai:sai, saldo:ent-sai, vendas:vendas, cats:cats};
+}
+function variacao(atual,anterior){
+  if(!anterior) return atual? {txt:'novo', cor:'var(--muted)'} : {txt:'—', cor:'var(--muted)'};
+  const p=((atual-anterior)/anterior)*100;
+  const sinal=p>=0?'+':'';
+  return {txt:sinal+p.toFixed(0)+'%', cor:p>=0?'var(--emerald)':'var(--rose)', pct:p};
+}
+const NOMES_MES=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+function abrirComparativo(){
+  const hoje=new Date();
+  let ano=hoje.getFullYear(), mes=hoje.getMonth()+1;
+  const antMes = mes===1?12:mes-1;
+  const antAno = mes===1?ano-1:ano;
+  const A=resumoMes(ano,mes), B=resumoMes(antAno,antMes);
+  const rotA=NOMES_MES[mes-1]+'/'+String(ano).slice(2), rotB=NOMES_MES[antMes-1]+'/'+String(antAno).slice(2);
+
+  function linha(rotulo,a,b,inverter){
+    const v=variacao(a,b);
+    let cor=v.cor;
+    if(inverter && v.pct!==undefined) cor = v.pct>=0?'var(--rose)':'var(--emerald)';
+    return '<div class="cmpLinha"><div class="cmpRot">'+rotulo+'</div>'+
+      '<div class="cmpVals"><span>'+brl(b)+'</span><span class="cmpSeta">→</span><strong>'+brl(a)+'</strong>'+
+      '<span class="cmpVar" style="color:'+cor+'">'+v.txt+'</span></div></div>';
+  }
+  const todasCats={};
+  Object.keys(A.cats).forEach(function(c){ todasCats[c]=1; });
+  Object.keys(B.cats).forEach(function(c){ todasCats[c]=1; });
+  const catsOrd=Object.keys(todasCats).sort(function(x,y){ return (A.cats[y]||0)-(A.cats[x]||0); });
+
+  abrirFolha('Comparativo — '+rotB+' x '+rotA,
+    '<h2 class="sec" style="margin-top:0">Resumo</h2>'+
+    linha('Vendas',A.vendas,B.vendas,false)+
+    linha('Entradas',A.ent,B.ent,false)+
+    linha('Saídas',A.sai,B.sai,true)+
+    linha('Saldo',A.saldo,B.saldo,false)+
+    '<h2 class="sec" style="margin-top:14px">Saídas por categoria</h2>'+
+    (catsOrd.length?catsOrd.map(function(c){ return linha(c,A.cats[c]||0,B.cats[c]||0,true); }).join('')
+      :'<div class="vazio">Sem saídas nos dois meses.</div>')+
+    '<div class="dica">Nas saídas, verde significa que gastou menos que no mês anterior.</div>');
+}
+// ---- Verificação de lançamento repetido ----
+function textoIgual(a,b){ return String(a||'').trim().toLowerCase()===String(b||'').trim().toLowerCase(); }
+
+// Procura uma conta já cadastrada igual à que está sendo salva
+function contaRepetida(d){
+  for(let i=0;i<contas.length;i++){
+    const c=contas[i];
+    if(d.documento && c.documento && c.documento===d.documento)
+      return {conta:c, motivo:'mesmo número de boleto ('+d.documento+')', forte:true};
+    if(d.linha && c.linha && c.linha===d.linha)
+      return {conta:c, motivo:'mesma linha digitável', forte:true};
+    if(Math.abs(c.valor-d.valor)<0.005 && c.venc===d.vencimento && textoIgual(c.desc,d.descricao))
+      return {conta:c, motivo:'mesmo valor, vencimento e descrição', forte:false};
+  }
+  return null;
+}
+
+// Procura um lançamento de caixa igual (mesmo dia, valor e descrição)
+function movimentoRepetido(d){
+  const dia=String(d.data).slice(0,10);
+  for(let i=0;i<movimentos.length;i++){
+    const m=movimentos[i];
+    const diaM=new Date(m.ts).toISOString().slice(0,10);
+    if(m.tipo===d.tipo && Math.abs(m.valor-d.valor)<0.005 && diaM===dia && textoIgual(m.desc,d.descricao))
+      return m;
+  }
+  return null;
+}
+
+// Mostra o aviso e devolve true se a pessoa quiser salvar mesmo assim
+function confirmarRepetido(r){
+  const c=r.conta;
+  const msg='ATENÇÃO — parece repetido.\n\n'+
+    'Já existe: '+c.desc+'\n'+
+    'Valor: '+brl(c.valor)+'\n'+
+    'Vencimento: '+dm(c.venc)+'\n'+
+    (c.status==='PAGO'?'Situação: já pago\n':'')+
+    '\nMotivo: '+r.motivo+'\n\nSalvar assim mesmo?';
+  return confirm(msg);
 }
 // ---- Identificação do beneficiário pelo código de barras ----
 // O nome da distribuidora não vem no código. O que vem é banco + conta.
@@ -398,6 +782,7 @@ const IC={
   lixo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>',
   baixar:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>',
   sair:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>',
+  lupa:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
   camera:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>'
 };
 
@@ -447,7 +832,10 @@ function montarApp(){
           '<div class="marca"><img src="icone-192.png" alt=""/></div>'+
           '<div><div class="mNome">Farma Família</div><div class="mSub" id="hoje"></div></div>'+
         '</div>'+
-        '<button class="sair" onclick="sair()" title="'+((s&&s.email)||'')+'">'+IC.sair+'</button>'+
+        '<div style="display:flex;gap:8px">'+
+          '<button class="sair" onclick="abrirBusca()" title="Buscar">'+IC.lupa+'</button>'+
+          '<button class="sair" onclick="sair()" title="'+((s&&s.email)||'')+'">'+IC.sair+'</button>'+
+        '</div>'+
       '</header>'+
       '<main id="main"></main>'+
       '<nav id="nav"></nav>'+
@@ -552,6 +940,7 @@ async function novaCategoria(tipo,alvo){
   if(alvo==='mov'){ movCat=nome; setMovTipo(movTipo); }
   else if(alvo==='desp'){ despCat=nome; redesenharCatsDespesa(); }
   else if(alvo==='edit'){ editCat=nome; setEditTipo(editTipo,nome); }
+  else if(alvo==='grupo'){ aplicarCategoriaGrupo(nome); }
 }
 function redesenharCatsDespesa(){
   const el=document.getElementById('dCats'); if(!el) return;
@@ -703,6 +1092,11 @@ function setMovTipo(t){
 }
 async function salvarMov(){
   const v=parseValor(document.getElementById('mv').value);if(!v)return;
+  const descMov=document.getElementById('md').value.trim();
+  const dataMov=document.getElementById('mdata').value||hojeISO();
+  const rep=movimentoRepetido({tipo:movTipo, valor:v, descricao:descMov, data:dataMov});
+  if(rep && !confirm('ATENÇÃO — parece repetido.\n\nJá existe um lançamento de '+brl(rep.valor)+
+      ' em '+dm(dataMov)+' com a mesma descrição.\n\nSalvar assim mesmo?')) return;
   const b=document.getElementById('mBtn'); b.textContent='Salvando…'; b.disabled=true;
   try{
     await api('movimentos',{method:'POST',body:JSON.stringify({
@@ -883,6 +1277,11 @@ async function salvarConta(continuar){
   const el=document.getElementById('cl');
   const boleto = contaAba==='BOLETO';
   const despesa = contaAba==='DESPESA';
+  const descricao=document.getElementById('cd').value.trim()||(boleto?'Boleto':despesa?'Despesa':'Recebimento');
+  const docNum = ultimoCodigoLido?documentoDe(ultimoCodigoLido):null;
+  const rep=contaRepetida({descricao:descricao, valor:v, vencimento:venc, documento:docNum,
+                           linha:(el&&el.value.replace(/\D/g,''))||null});
+  if(rep && !confirmarRepetido(rep)) return;
   const b=document.getElementById('cBtn'); b.textContent='Salvando…'; b.disabled=true;
   try{
     await api('contas',{method:'POST',body:JSON.stringify({
@@ -1131,6 +1530,11 @@ async function salvarConta(continuar){
   const el=document.getElementById('cl');
   const boleto = contaAba==='BOLETO';
   const despesa = contaAba==='DESPESA';
+  const descricao=document.getElementById('cd').value.trim()||(boleto?'Boleto':despesa?'Despesa':'Recebimento');
+  const docNum = ultimoCodigoLido?documentoDe(ultimoCodigoLido):null;
+  const rep=contaRepetida({descricao:descricao, valor:v, vencimento:venc, documento:docNum,
+                           linha:(el&&el.value.replace(/\D/g,''))||null});
+  if(rep && !confirmarRepetido(rep)) return;
   const b=document.getElementById('cBtn'); b.textContent='Salvando…'; b.disabled=true;
   try{
     await api('contas',{method:'POST',body:JSON.stringify({
@@ -1264,7 +1668,13 @@ function vRel(){
     '</section>'+
     blocoCategorias('Saídas por categoria','SAIDA',iv,'var(--rose)')+
     blocoCategorias('Entradas por categoria','ENTRADA',iv,'var(--emerald)')+
-    '<button class="btnS" style="width:100%;margin-top:6px" onclick="exportarCsv()">'+IC.baixar+' Exportar em CSV (Excel)</button>';
+    '<button class="btnS" style="width:100%;margin-top:6px" onclick="exportarCsv()">'+IC.baixar+' Exportar em CSV (Excel)</button>'+
+    '<button class="btnS" style="width:100%;margin-top:8px" onclick="abrirComparativo()">Comparar com o mês anterior</button>'+
+    '<h2 class="sec" style="margin-top:14px">Ferramentas</h2>'+
+    '<button class="btnS" style="width:100%" onclick="abrirReclassificar()">Reclassificar categorias</button>'+
+    '<button class="btnS" style="width:100%;margin-top:8px" onclick="abrirRecorrentes()">Contas de todo mês</button>'+
+    '<button class="btnS" style="width:100%;margin-top:8px" onclick="conferirDuplicados()">Conferir lançamentos repetidos</button>'+
+    '<button class="btnS" style="width:100%;margin-top:8px" onclick="pedirPermissaoAviso()">'+(avisosLigados()?'Avisos de vencimento: ligados':'Ativar avisos de vencimento')+'</button>';
   }
   return '<div class="chips">'+per.map(function(p){ return '<button class="chip '+(relPeriodo===p[0]?'on':'')+'" onclick="relPeriodo=\''+p[0]+'\';render()">'+p[1]+'</button>'; }).join('')+'</div>'+
     (relPeriodo==='custom'?'<div class="duo"><div style="flex:1"><label class="campo">De</label><input type="date" value="'+relDe+'" onchange="relDe=this.value;render()"/></div><div style="flex:1"><label class="campo">Até</label><input type="date" value="'+relAte+'" onchange="relAte=this.value;render()"/></div></div>':'')+
@@ -1301,9 +1711,13 @@ function fecharFolha(){ pararScanner(); const o=document.getElementById('overlay
 // ============================================================
 //  Início
 // ============================================================
+async function aposCarregar(){
+  try{ await carregarRecorrentes(); await gerarRecorrentes(); }catch(e){}
+  try{ avisarVencimentos(false); }catch(e){}
+}
 async function iniciar(){
   document.getElementById('raiz').innerHTML='<div style="display:grid;place-items:center;height:100vh;background:var(--pine)"><span class="girando" style="color:var(--amber);font-size:34px">◜</span></div>';
-  try{ await carregarTudo(); montarApp(); }
+  try{ await carregarTudo(); montarApp(); aposCarregar(); }
   catch(e){ Sessao.limpar(); mostrarLogin('Não consegui conectar. Verifique a internet e entre novamente.'); }
 }
 
