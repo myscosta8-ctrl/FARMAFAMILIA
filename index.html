@@ -290,11 +290,33 @@ function alertas(){
   const cp=contas.filter(function(c){ return c.tipo==='PAGAR'&&c.status!=='PAGO'&&diasAte(c.venc)<=7; });
   return {baixo:baixo,venc:venc,contas:cp.length,contasTotal:cp.reduce(function(s,c){ return s+c.valor; },0),proxima:contasOrd('PAGAR').filter(function(c){ return c.status!=='PAGO'; })[0]};
 }
-const BASE_VENC=Date.UTC(1997,9,7);
+// ---- Vencimento do boleto (fator de vencimento FEBRABAN) ----
+// O contador de 4 dígitos chegou a 9999 em 21/02/2025 e recomeçou em 1000
+// no dia 22/02/2025. Por isso o mesmo fator pode significar duas datas:
+// uma na contagem antiga (base 07/10/1997) e outra na nova (base 22/02/2025).
+// Escolhemos a que fizer mais sentido em relação a hoje.
+const BASE_VENC=Date.UTC(1997,9,7);           // contagem antiga
+const BASE_VENC_NOVA=Date.UTC(2025,1,22);     // contagem nova (fator 1000)
+function dataDoFator(fator){
+  if(!fator||fator<=0) return null;
+  const antiga=new Date(BASE_VENC + fator*86400000);
+  const nova=(fator>=1000) ? new Date(BASE_VENC_NOVA + (fator-1000)*86400000) : null;
+  if(!nova) return antiga;
+  const hoje=Date.now();
+  return Math.abs(nova-hoje) < Math.abs(antiga-hoje) ? nova : antiga;
+}
 // Linha digitável (47 dígitos)
-function decodificarLinha(linha){ const d=String(linha).replace(/\D/g,''); if(d.length!==47)return null; const fator=parseInt(d.slice(33,37),10); const venc=fator>0?new Date(BASE_VENC+fator*86400000):null; const c=parseInt(d.slice(37,47),10); return {valor:isNaN(c)?null:c/100,vencimento:venc}; }
+function decodificarLinha(linha){
+  const d=String(linha).replace(/\D/g,''); if(d.length!==47)return null;
+  const c=parseInt(d.slice(37,47),10);
+  return { valor: isNaN(c)?null:c/100, vencimento: dataDoFator(parseInt(d.slice(33,37),10)) };
+}
 // Código de barras do boleto (44 dígitos)
-function decodificarCodigoBarras(cb){ const d=String(cb).replace(/\D/g,''); if(d.length!==44)return null; const fator=parseInt(d.slice(5,9),10); const venc=fator>0?new Date(BASE_VENC+fator*86400000):null; const c=parseInt(d.slice(9,19),10); return {valor:isNaN(c)?null:c/100,vencimento:venc}; }
+function decodificarCodigoBarras(cb){
+  const d=String(cb).replace(/\D/g,''); if(d.length!==44)return null;
+  const c=parseInt(d.slice(9,19),10);
+  return { valor: isNaN(c)?null:c/100, vencimento: dataDoFator(parseInt(d.slice(5,9),10)) };
+}
 
 // Lê a FOTO do boleto e extrai valor e vencimento pelo código de barras.
 // A foto NÃO é guardada — serve só para a leitura.
