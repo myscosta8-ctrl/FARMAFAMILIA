@@ -86,6 +86,31 @@
   .primario{width:100%;background:var(--amber);color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--i);margin-top:16px}
   .fechar{background:none;border:none;cursor:pointer;padding:4px;font-size:18px;color:var(--muted)}
   .dica{font-size:12px;color:var(--muted);line-height:1.5;margin-top:8px}
+  .vcTotal{background:linear-gradient(150deg,var(--pineSoft),var(--pineDark));border-radius:18px;padding:16px 18px;color:#fff}
+  .vcTotalRot{font-size:12.5px;color:var(--amberGlass)}
+  .vcTotalVal{font-size:30px;font-weight:700;font-family:var(--g);letter-spacing:-.02em;margin-top:2px}
+  .vcTotalSub{font-size:12px;color:#FFD9D5;margin-top:3px}
+  .vcGrade{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .vcCard{border:1px solid var(--line);border-radius:14px;padding:11px 12px;text-align:left;cursor:pointer;font-family:var(--i)}
+  .vcRot{font-size:11.5px;font-weight:600}
+  .vcVal{font-size:17px;font-weight:700;font-family:var(--g);margin-top:2px}
+  .vcQtd{font-size:10.5px;color:var(--muted);margin-top:1px}
+  .cmpHero{background:linear-gradient(150deg,var(--pineSoft),var(--pineDark));border-radius:18px;padding:16px 18px;color:#fff;margin-bottom:12px}
+  .cmpHeroRot{font-size:12.5px;color:var(--amberGlass)}
+  .cmpHeroVal{font-size:30px;font-weight:700;font-family:var(--g);letter-spacing:-.02em;margin-top:2px}
+  .cmpHeroSub{font-size:12px;color:#FFD9D5;margin-top:4px}
+  .cmpBadge{display:inline-block;color:#fff;border-radius:7px;padding:2px 7px;font-size:11px;font-weight:700;font-family:var(--g);margin-left:4px}
+  .cmpGrade{display:grid;gap:9px}
+  .cmpCard,.cmpCat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:11px 13px}
+  .cmpCat{margin-bottom:8px}
+  .cmpCardTopo{display:flex;justify-content:space-between;align-items:center;font-size:13px}
+  .cmpCardTopo strong{font-family:var(--g);font-size:13px}
+  .cmpCardVal{font-size:19px;font-weight:700;font-family:var(--g);margin-top:2px}
+  .cmpMini{font-size:11.5px;color:var(--muted)}
+  .cmpBarras{margin-top:6px;display:grid;gap:4px}
+  .cmpBarra{position:relative;height:16px;background:#F0ECEB;border-radius:5px;overflow:hidden}
+  .cmpBarra span{position:absolute;left:0;top:0;bottom:0;border-radius:5px}
+  .cmpBarra em{position:absolute;right:6px;top:0;line-height:16px;font-size:10.5px;font-style:normal;color:var(--ink);font-family:var(--g);font-weight:600}
   .cmpLinha{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px}
   .cmpRot{font-size:13.5px;font-weight:500}
   .cmpVals{display:flex;align-items:center;gap:8px;margin-top:5px;font-size:13px;color:var(--muted);flex-wrap:wrap}
@@ -406,6 +431,77 @@ function conferirDuplicados(){
       : '<div class="vazio">Nenhuma repetição encontrada. Está tudo certo.</div>');
 }
 // ============================================================
+//  PAINEL DE VENCIMENTOS (contas em aberto por período)
+// ============================================================
+function fimDaSemana(){   // próximos 7 dias, contando hoje
+  return inicioDia()+7*86400000;
+}
+function fimDoMes(){
+  const d=new Date();
+  return new Date(d.getFullYear(), d.getMonth()+1, 1).getTime();
+}
+function painelVencimentos(lista){
+  const abertas=lista.filter(function(c){ return c.status!=='PAGO'; });
+  const hoje0=inicioDia(), amanha=hoje0+86400000;
+  const grupo={atrasado:[], hoje:[], semana:[], mes:[], depois:[]};
+  abertas.forEach(function(c){
+    const t=new Date(c.venc+'T12:00:00').getTime();
+    if(t<hoje0) grupo.atrasado.push(c);
+    else if(t<amanha) grupo.hoje.push(c);
+    else if(t<fimDaSemana()) grupo.semana.push(c);
+    else if(t<fimDoMes()) grupo.mes.push(c);
+    else grupo.depois.push(c);
+  });
+  const soma=function(a){ return a.reduce(function(s,c){ return s+c.valor; },0); };
+  const totalGeral=soma(abertas);
+
+  if(!abertas.length) return '';
+
+  function bloco(rot,arr,cor,fundo,filtro){
+    return '<button class="vcCard" style="background:'+fundo+'" onclick="filtroVenc=\''+filtro+'\';render()">'+
+      '<div class="vcRot" style="color:'+cor+'">'+rot+'</div>'+
+      '<div class="vcVal" style="color:'+cor+'">'+brl(soma(arr))+'</div>'+
+      '<div class="vcQtd">'+arr.length+' conta'+(arr.length===1?'':'s')+'</div></button>';
+  }
+  // acumulados: semana inclui hoje e atrasados; mês inclui tudo até o fim do mês
+  const ateHoje=grupo.atrasado.concat(grupo.hoje);
+  const ateSemana=ateHoje.concat(grupo.semana);
+  const ateMes=ateSemana.concat(grupo.mes);
+
+  return '<section class="vcTotal">'+
+      '<div class="vcTotalRot">Total em aberto</div>'+
+      '<div class="vcTotalVal">'+brl(totalGeral)+'</div>'+
+      '<div class="vcTotalSub">'+abertas.length+' conta'+(abertas.length===1?'':'s')+
+        (grupo.atrasado.length?' · '+grupo.atrasado.length+' em atraso':'')+'</div>'+
+    '</section>'+
+    '<div class="vcGrade">'+
+      bloco('Vence hoje', ateHoje, 'var(--rose)', '#FDECEC', 'hoje')+
+      bloco('Nesta semana', ateSemana, '#8A5A00', '#FDF1DC', 'semana')+
+      bloco('Neste mês', ateMes, 'var(--pine)', 'var(--amberSoft)', 'mes')+
+      bloco('Depois', grupo.depois, 'var(--muted)', '#EEEAE9', 'depois')+
+    '</div>'+
+    (filtroVenc!=='todos'
+      ? '<button class="btnS" style="width:100%" onclick="filtroVenc=\'todos\';render()">Mostrando: '+rotuloFiltro(filtroVenc)+' — ver todas</button>'
+      : '');
+}
+let filtroVenc='todos';
+function rotuloFiltro(f){
+  return f==='hoje'?'vence hoje e atrasadas':f==='semana'?'até 7 dias':f==='mes'?'até o fim do mês':f==='depois'?'depois deste mês':'todas';
+}
+function aplicaFiltroVenc(lista){
+  if(filtroVenc==='todos') return lista;
+  const hoje0=inicioDia(), amanha=hoje0+86400000;
+  return lista.filter(function(c){
+    if(c.status==='PAGO') return false;
+    const t=new Date(c.venc+'T12:00:00').getTime();
+    if(filtroVenc==='hoje')   return t<amanha;
+    if(filtroVenc==='semana') return t<fimDaSemana();
+    if(filtroVenc==='mes')    return t<fimDoMes();
+    if(filtroVenc==='depois') return t>=fimDoMes();
+    return true;
+  });
+}
+// ============================================================
 //  1) RECLASSIFICAR CATEGORIAS EM MASSA
 // ============================================================
 function abrirReclassificar(){
@@ -605,36 +701,68 @@ function variacao(atual,anterior){
 const NOMES_MES=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 function abrirComparativo(){
   const hoje=new Date();
-  let ano=hoje.getFullYear(), mes=hoje.getMonth()+1;
-  const antMes = mes===1?12:mes-1;
-  const antAno = mes===1?ano-1:ano;
+  const ano=hoje.getFullYear(), mes=hoje.getMonth()+1;
+  const antMes = mes===1?12:mes-1, antAno = mes===1?ano-1:ano;
   const A=resumoMes(ano,mes), B=resumoMes(antAno,antMes);
   const rotA=NOMES_MES[mes-1]+'/'+String(ano).slice(2), rotB=NOMES_MES[antMes-1]+'/'+String(antAno).slice(2);
 
-  function linha(rotulo,a,b,inverter){
+  // cartão grande: saldo do mês
+  const vSaldo=variacao(A.saldo,B.saldo);
+  const heroi='<section class="cmpHero">'+
+      '<div class="cmpHeroRot">Saldo de '+rotA+'</div>'+
+      '<div class="cmpHeroVal">'+brl(A.saldo)+'</div>'+
+      '<div class="cmpHeroSub">'+rotB+': '+brl(B.saldo)+
+        ' <span class="cmpBadge" style="background:'+(A.saldo>=B.saldo?'#1E7A55':'#8E1A15')+'">'+vSaldo.txt+'</span></div>'+
+    '</section>';
+
+  // cartões de indicador
+  function cartao(rot,a,b,menorEhMelhor){
     const v=variacao(a,b);
     let cor=v.cor;
-    if(inverter && v.pct!==undefined) cor = v.pct>=0?'var(--rose)':'var(--emerald)';
-    return '<div class="cmpLinha"><div class="cmpRot">'+rotulo+'</div>'+
-      '<div class="cmpVals"><span>'+brl(b)+'</span><span class="cmpSeta">→</span><strong>'+brl(a)+'</strong>'+
-      '<span class="cmpVar" style="color:'+cor+'">'+v.txt+'</span></div></div>';
+    if(menorEhMelhor && v.pct!==undefined) cor = v.pct>0?'var(--rose)':'var(--emerald)';
+    const larg=Math.max(a,b)>0 ? Math.round(a/Math.max(a,b)*100) : 0;
+    const largB=Math.max(a,b)>0 ? Math.round(b/Math.max(a,b)*100) : 0;
+    return '<div class="cmpCard">'+
+      '<div class="cmpCardTopo"><span>'+rot+'</span><strong style="color:'+cor+'">'+v.txt+'</strong></div>'+
+      '<div class="cmpCardVal">'+brl(a)+'</div>'+
+      '<div class="cmpMini">'+rotB+' '+brl(b)+'</div>'+
+      '<div class="cmpBarras">'+
+        '<div class="cmpBarra"><span style="width:'+largB+'%;background:#C9BFBD"></span></div>'+
+        '<div class="cmpBarra"><span style="width:'+larg+'%;background:'+(menorEhMelhor?'var(--rose)':'var(--emerald)')+'"></span></div>'+
+      '</div></div>';
   }
-  const todasCats={};
-  Object.keys(A.cats).forEach(function(c){ todasCats[c]=1; });
-  Object.keys(B.cats).forEach(function(c){ todasCats[c]=1; });
-  const catsOrd=Object.keys(todasCats).sort(function(x,y){ return (A.cats[y]||0)-(A.cats[x]||0); });
 
-  abrirFolha('Comparativo — '+rotB+' x '+rotA,
-    '<h2 class="sec" style="margin-top:0">Resumo</h2>'+
-    linha('Vendas',A.vendas,B.vendas,false)+
-    linha('Entradas',A.ent,B.ent,false)+
-    linha('Saídas',A.sai,B.sai,true)+
-    linha('Saldo',A.saldo,B.saldo,false)+
+  // categorias com barras comparadas
+  const todas={};
+  Object.keys(A.cats).forEach(function(c){ todas[c]=1; });
+  Object.keys(B.cats).forEach(function(c){ todas[c]=1; });
+  const ordem=Object.keys(todas).sort(function(x,y){ return (A.cats[y]||0)-(A.cats[x]||0); });
+  const maxCat=ordem.reduce(function(m,c){ return Math.max(m,A.cats[c]||0,B.cats[c]||0); },0);
+
+  const blocosCat = ordem.length ? ordem.map(function(c){
+    const a=A.cats[c]||0, b=B.cats[c]||0;
+    const v=variacao(a,b);
+    const cor = v.pct===undefined ? 'var(--muted)' : (v.pct>0?'var(--rose)':'var(--emerald)');
+    return '<div class="cmpCat">'+
+      '<div class="cmpCardTopo"><span>'+c+'</span><strong style="color:'+cor+'">'+v.txt+'</strong></div>'+
+      '<div class="cmpBarras" style="margin-top:6px">'+
+        '<div class="cmpBarra"><span style="width:'+(maxCat?Math.round(b/maxCat*100):0)+'%;background:#C9BFBD"></span><em>'+brl(b)+'</em></div>'+
+        '<div class="cmpBarra"><span style="width:'+(maxCat?Math.round(a/maxCat*100):0)+'%;background:var(--pineSoft)"></span><em>'+brl(a)+'</em></div>'+
+      '</div></div>';
+  }).join('') : '<div class="vazio">Sem saídas nos dois meses.</div>';
+
+  abrirFolha('Comparativo · '+rotB+' → '+rotA,
+    heroi+
+    '<div class="cmpGrade">'+
+      cartao('Vendas',A.vendas,B.vendas,false)+
+      cartao('Entradas',A.ent,B.ent,false)+
+      cartao('Saídas',A.sai,B.sai,true)+
+    '</div>'+
     '<h2 class="sec" style="margin-top:14px">Saídas por categoria</h2>'+
-    (catsOrd.length?catsOrd.map(function(c){ return linha(c,A.cats[c]||0,B.cats[c]||0,true); }).join('')
-      :'<div class="vazio">Sem saídas nos dois meses.</div>')+
-    '<div class="dica">Nas saídas, verde significa que gastou menos que no mês anterior.</div>');
+    blocosCat+
+    '<div class="dica">Barra cinza = '+rotB+'. Barra colorida = '+rotA+'. Nas saídas, verde significa que gastou menos.</div>');
 }
+
 // ---- Verificação de lançamento repetido ----
 function textoIgual(a,b){ return String(a||'').trim().toLowerCase()===String(b||'').trim().toLowerCase(); }
 
@@ -1219,25 +1347,36 @@ let contaAba='BOLETO';
 function vContas(){
   const lista=contasOrd(contaAba);
   const abasC=[['BOLETO','Boletos'],['DESPESA','Despesas'],['RECEBER','A receber']];
-  const pend=lista.filter(function(c){ return c.status!=='PAGO'; });
-  const total=pend.reduce(function(s,c){ return s+c.valor; },0);
-  return '<div class="toggle">'+
-      abasC.map(function(x){ return '<button style="'+(contaAba===x[0]?'background:var(--pine);color:#fff':'')+'" onclick="contaAba=\''+x[0]+'\';render()">'+x[1]+'</button>'; }).join('')+
-    '</div>'+
-    (pend.length?'<div class="totalAberto"><span>'+pend.length+' em aberto</span><strong>'+brl(total)+'</strong></div>':'')+
-    (lista.length?lista.map(function(c){
-      const dias=diasAte(c.venc);
-      const st=c.status==='PAGO'?{t:(contaAba==='RECEBER'?'Recebido':'Pago'),c:'var(--emerald)',bg:'#E7F6EF'}
-        :dias<0?{t:'Atrasado',c:'var(--rose)',bg:'#FDECEC'}
-        :dias<=3?{t:'Vence em '+dias+'d',c:'var(--pine)',bg:'var(--amberSoft)'}
-        :{t:'Vence '+dm(c.venc),c:'var(--muted)',bg:'#EEEAE9'};
-      return '<div class="item"><div style="flex:1"><div style="font-size:14px;font-weight:500">'+c.desc+'</div>'+
-        '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><span class="tag" style="color:'+st.c+';background:'+st.bg+'">'+st.t+'</span>'+
-        (c.categoria?'<span class="tag" style="color:var(--muted);background:#EEEAE9">'+c.categoria+'</span>':'')+'</div></div>'+
-        '<div style="text-align:right"><div class="val2" style="font-size:16px">'+brl(c.valor)+'</div>'+
-        (c.status!=='PAGO'?'<button class="pagarBtn" onclick="quitar(\''+c.id+'\')">'+(contaAba==='RECEBER'?'Marcar recebido':'Marcar pago')+'</button>':'')+
-        '<button class="lixo" onclick="apagarConta(\''+c.id+'\')" style="margin-top:4px">'+IC.lixo+'</button></div></div>';
-    }).join(''):'<div class="vazio">Nenhum registro aqui. Toque em + para adicionar.</div>');
+  const visiveis=aplicaFiltroVenc(lista);
+
+  const cabecalho='<div class="toggle">'+
+      abasC.map(function(x){
+        return '<button style="'+(contaAba===x[0]?'background:var(--pine);color:#fff':'')+'" onclick="contaAba=\''+x[0]+'\';filtroVenc=\'todos\';render()">'+x[1]+'</button>';
+      }).join('')+
+    '</div>';
+
+  const itens = visiveis.length
+    ? visiveis.map(function(c){
+        const dias=diasAte(c.venc);
+        const st = c.status==='PAGO' ? {t:(contaAba==='RECEBER'?'Recebido':'Pago'),c:'var(--emerald)',bg:'#E7F6EF'}
+          : dias<0  ? {t:'Atrasado',c:'var(--rose)',bg:'#FDECEC'}
+          : dias===0? {t:'Vence hoje',c:'var(--rose)',bg:'#FDECEC'}
+          : dias<=3 ? {t:'Vence em '+dias+'d',c:'#8A5A00',bg:'#FDF1DC'}
+          : {t:'Vence '+dm(c.venc),c:'var(--muted)',bg:'#EEEAE9'};
+        return '<div class="item"><div style="flex:1">'+
+          '<div style="font-size:14px;font-weight:500">'+c.desc+'</div>'+
+          '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">'+
+            '<span class="tag" style="color:'+st.c+';background:'+st.bg+'">'+st.t+'</span>'+
+            (c.categoria?'<span class="tag" style="color:var(--muted);background:#EEEAE9">'+c.categoria+'</span>':'')+
+          '</div></div>'+
+          '<div style="text-align:right"><div class="val2" style="font-size:16px">'+brl(c.valor)+'</div>'+
+          (c.status!=='PAGO'?'<button class="pagarBtn" onclick="quitar(\''+c.id+'\')">'+(contaAba==='RECEBER'?'Marcar recebido':'Marcar pago')+'</button>':'')+
+          '<button class="lixo" onclick="apagarConta(\''+c.id+'\')" style="margin-top:4px">'+IC.lixo+'</button>'+
+          '</div></div>';
+      }).join('')
+    : '<div class="vazio">'+(filtroVenc==='todos'?'Nenhum registro aqui. Toque em + para adicionar.':'Nenhuma conta neste período.')+'</div>';
+
+  return cabecalho + painelVencimentos(lista) + itens;
 }
 let despCat='Frete';
 let ultimoCodigoLido=null;   // código de barras do boleto que acabou de ser lido
