@@ -836,9 +836,26 @@ async function salvarConta(continuar){
 let scannerStream=null, scannerLoop=null;
 function suportaLeitura(){ return ('BarcodeDetector' in window) && navigator.mediaDevices && navigator.mediaDevices.getUserMedia; }
 
+// Diz exatamente o que falta para a leitura funcionar neste aparelho
+async function diagnosticoLeitura(){
+  const p=[];
+  if(!window.isSecureContext) p.push('a página precisa estar em HTTPS');
+  if(!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia)) p.push('o navegador não dá acesso à câmera');
+  if(!('BarcodeDetector' in window)) p.push('o navegador não tem leitor de código de barras (BarcodeDetector)');
+  else{
+    try{
+      const sup=await BarcodeDetector.getSupportedFormats();
+      const uteis=['itf','code_128','codabar','code_39'].filter(function(f){ return sup.indexOf(f)>=0; });
+      if(!uteis.length) p.push('o leitor não suporta o formato de boleto (ITF). Formatos disponíveis: '+(sup.join(', ')||'nenhum'));
+    }catch(e){ p.push('não consegui consultar os formatos suportados'); }
+  }
+  return p;
+}
 async function abrirScannerBoleto(){
-  if(!suportaLeitura()){
-    alert('Este navegador não lê código de barras ao vivo. Use o Chrome no Android, tire uma foto ou digite a linha do boleto.');
+  const problemas=await diagnosticoLeitura();
+  if(problemas.length){
+    alert('A leitura pela câmera não funciona neste aparelho porque:\n\n· '+problemas.join('\n· ')+
+          '\n\nUse a opção de digitar a linha do boleto — o valor e o vencimento são preenchidos sozinhos.');
     return;
   }
   const ov=document.createElement('div');
@@ -925,13 +942,94 @@ async function fotoBoleto(ev){
   ev.target.value='';
 }
 
+// Converte a linha digitável (47) para o código de barras (44)
+function linhaParaBarras(l){
+  const d=String(l).replace(/\D/g,'');
+  if(d.length!==47) return null;
+  return d.slice(0,4)+d[32]+d.slice(33,47)+d.slice(4,9)+d.slice(10,20)+d.slice(21,31);
+}
+// Confere o dígito verificador geral do boleto (módulo 11)
+function dvBarrasOk(cb){
+  const d=String(cb).replace(/\D/g,'');
+  if(d.length!==44) return false;
+  const semDv=d.slice(0,4)+d.slice(5);
+  let peso=2, soma=0;
+  for(let i=semDv.length-1;i>=0;i--){
+    soma+=parseInt(semDv[i],10)*peso;
+    peso++; if(peso>9) peso=2;
+  }
+  let dv=11-(soma%11);
+  if(dv===0||dv>9) dv=1;
+  return dv===parseInt(d[4],10);
+}
+// Lê o que foi digitado: aceita linha digitável (47) ou código de barras (44)
+function lerDigitado(txt){
+  const d=String(txt||'').replace(/\D/g,'');
+  if(d.length===47){
+    const cb=linhaParaBarras(d);
+    return { pronto:true, dados:decodificarLinha(d), dvOk:dvBarrasOk(cb), faltam:0, tem:47, alvo:47 };
+  }
+  if(d.length===44){
+    return { pronto:true, dados:decodificarCodigoBarras(d), dvOk:dvBarrasOk(d), faltam:0, tem:44, alvo:44 };
+  }
+  const alvo = d.length>44 ? 47 : 44;
+  return { pronto:false, dados:null, dvOk:null, faltam:Math.max(0,alvo-d.length), tem:d.length, alvo:alvo };
+}
+// Chamada a cada tecla digitada no campo da linha
 function autoLinha(){
-  const d=decodificarLinha(document.getElementById('cl').value);
-  if(d){
-    if(d.valor!=null){ porValorNoCampo('cv',d.valor); previa('cv','cPrev'); }
-    if(d.vencimento)document.getElementById('cvenc').value=d.vencimento.toISOString().slice(0,10);
+  const campo=document.getElementById('cl'); if(!campo) return;
+  const aviso=document.getElementById('cFoto');
+  const r=lerDigitado(campo.value);
+
+  if(!r.pronto){
+    // ainda incompleto: limpa para não ficar valor velho na tela
+    const cv=document.getElementById('cv'), cvc=document.getElementById('cvenc');
+    if(cv){ cv.value=''; previa('cv','cPrev'); }
+    if(cvc) cvc.value='';
+    if(aviso){
+      aviso.style.color='var(--muted)';
+      aviso.textContent = r.tem===0 ? '' : 'Digitado '+r.tem+' de '+r.alvo+' números — faltam '+r.faltam+'.';
+    }
+    return;
+  }
+  if(!r.dados || r.dados.valor==null){
+    if(aviso){ aviso.style.color='var(--rose)'; aviso.textContent='Não consegui interpretar esses números.'; }
+    return;
+  }
+  if(r.dados.valor!=null){ porValorNoCampo('cv',r.dados.valor); previa('cv','cPrev'); }
+  if(r.dados.vencimento){ const cvc=document.getElementById('cvenc'); if(cvc) cvc.value=r.dados.vencimento.toISOString().slice(0,10); }
+  if(aviso){
+    if(r.dvOk===false){
+      aviso.style.color='var(--rose)';
+      aviso.textContent='Atenção: os números não batem no dígito verificador. Confira antes de salvar.';
+    }else{
+      aviso.style.color='var(--emerald)';
+      aviso.textContent='Lido: '+brl(r.dados.valor)+(r.dados.vencimento?' · vence '+dm(r.dados.vencimento.toISOString().slice(0,10)):'');
+    }
   }
 }
+async function salvarConta(continuar){
+  const v=parseValor(document.getElementById('cv').value);
+  const venc=document.getElementById('cvenc').value;
+  if(!v||isNaN(v)||!venc){alert('Informe valor e data.');return;}
+  const el=document.getElementById('cl');
+  const boleto = contaAba==='BOLETO';
+  const despesa = contaAba==='DESPESA';
+  const b=document.getElementById('cBtn'); b.textContent='Salvando…'; b.disabled=true;
+  try{
+    await api('contas',{method:'POST',body:JSON.stringify({
+      tipo: contaAba==='RECEBER'?'RECEBER':'PAGAR',
+      origem: boleto?'BOLETO':'MANUAL',
+      categoria: despesa?despCat:null,
+      descricao:document.getElementById('cd').value.trim()||(boleto?'Boleto':despesa?'Despesa':'Recebimento'),
+      valor:v, vencimento:venc, status:'PENDENTE',
+      linha_digitavel:(el&&el.value.replace(/\D/g,''))||null
+    })});
+    fecharFolha(); await recarregar();
+    if(continuar){ abrirConta(); setTimeout(abrirScannerBoleto,120); }
+  }catch(e){ alert(e.message); b.textContent='Salvar'; b.disabled=false; }
+}
+// ---------- Leitura do boleto: câmera ao vivo (rápida) ----------
 // Pergunta a data do pagamento antes de dar baixa, para que o lançamento
 // caia no dia certo do caixa (e não sempre no dia de hoje).
 function quitar(id){
