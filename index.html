@@ -581,6 +581,69 @@ function aplicaFiltroMes(lista){
   });
 }
 // ============================================================
+//  HISTÓRICO — registra quem fez o quê
+// ============================================================
+async function registrar(acao, entidade, descricao, valor, detalhe){
+  try{
+    const s=Sessao.ler();
+    await api('historico',{method:'POST',body:JSON.stringify({
+      quem:(s&&s.email)||'?', acao:acao, entidade:entidade,
+      descricao:descricao||null, valor:(valor==null?null:valor), detalhe:detalhe||null
+    })});
+  }catch(e){ /* o registro nunca deve travar a ação principal */ }
+}
+// Tela do histórico de movimentações
+const COR_ACAO={CRIOU:'var(--emerald)',EDITOU:'#8A5A00',PAGOU:'var(--pine)',REABRIU:'#8A5A00',EXCLUIU:'var(--rose)'};
+async function abrirHistorico(){
+  abrirFolha('Histórico de movimentações','<div class="vazio">Carregando…</div>',null);
+  let reg=[];
+  try{ reg=await api('historico?select=*&order=quando.desc&limit=200')||[]; }catch(e){}
+  const cont=document.querySelector('#overlay .folha');
+  if(!cont) return;
+  const corpo = reg.length
+    ? reg.map(function(h){
+        const d=new Date(h.quando);
+        const data=d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+        const cor=COR_ACAO[h.acao]||'var(--muted)';
+        const podeReverter = h.acao==='EXCLUIU' && h.detalhe;
+        return '<div class="item" style="margin-top:6px;display:block">'+
+          '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">'+
+            '<span class="tag" style="color:'+cor+';background:'+cor+'18">'+h.acao+' · '+h.entidade+'</span>'+
+            (h.valor!=null?'<strong class="val2">'+brl(h.valor)+'</strong>':'')+
+          '</div>'+
+          '<div style="font-size:13.5px;margin-top:5px">'+(h.descricao||'—')+'</div>'+
+          '<div style="font-size:11px;color:var(--muted);margin-top:3px">'+data+' · '+(h.quem||'?')+'</div>'+
+          (podeReverter?'<button class="pagarBtn" style="margin-top:6px" onclick="restaurarDoHistorico(\''+h.id+'\')">Recuperar este lançamento</button>':'')+
+        '</div>';
+      }).join('')
+    : '<div class="vazio">Ainda não há registros. A partir de agora, tudo que for lançado, editado ou excluído aparece aqui.</div>';
+  cont.innerHTML='<div class="folhaTopo"><span class="folhaTitulo">Histórico de movimentações</span><button class="fechar" onclick="fecharFolha()">✕</button></div>'+
+    '<div class="dica" style="margin-top:0">Últimos 200 registros. Exclusões podem ser recuperadas.</div>'+corpo;
+}
+// Recupera um lançamento/conta que foi excluído, a partir da cópia guardada no log
+async function restaurarDoHistorico(idLog){
+  let reg=null;
+  try{ const r=await api('historico?id=eq.'+idLog+'&select=*'); reg=r&&r[0]; }catch(e){}
+  if(!reg||!reg.detalhe){ alert('Não há dados guardados para recuperar este item.'); return; }
+  const d=reg.detalhe;
+  if(!confirm('Recuperar "'+(d.descricao||reg.descricao||'')+'"?')) return;
+  try{
+    if(reg.entidade==='Entrada'||reg.entidade==='Saída'){
+      await api('movimentos',{method:'POST',body:JSON.stringify({
+        tipo:d.tipo, categoria:d.categoria, valor:d.valor, descricao:d.descricao, data_hora:d.data_hora||new Date().toISOString()
+      })});
+    }else{
+      await api('contas',{method:'POST',body:JSON.stringify({
+        tipo:d.tipo, origem:d.origem, categoria:d.categoria, valor:d.valor,
+        vencimento:d.vencimento, status:d.status||'PENDENTE', descricao:d.descricao, documento:d.documento
+      })});
+    }
+    await registrar('CRIOU', reg.entidade, (d.descricao||'')+' (recuperado)', d.valor);
+    await recarregar(); fecharFolha();
+    alert('Recuperado com sucesso.');
+  }catch(e){ alert(e.message); }
+}
+// ============================================================
 //  MENU LATERAL (configurações e ferramentas)
 // ============================================================
 function abrirMenu(){
@@ -606,6 +669,7 @@ function abrirMenu(){
     item(IC.alerta,'Avisos de vencimento',(avisosLigados()?'Ligados':'Desligados'),"pedirPermissaoAviso()")+
 
     '<div class="drSecao">Conferência</div>'+
+    item(IC.relogio,'Histórico de movimentações','Quem lançou, editou ou excluiu',"abrirHistorico()")+
     item(IC.lupa,'Auditoria dos dados','Verifica a sincronização',"abrirAuditoria()")+
     item(IC.contas,'Lançamentos repetidos','Procura duplicidades',"conferirDuplicados()")+
     item(IC.baixar,'Exportar CSV','Planilha do período',"irPara('rel')")+
@@ -1433,6 +1497,7 @@ async function salvarEdicao(id){
       descricao:document.getElementById('ed').value.trim()||null,
       data_hora:montarDataHora(document.getElementById('edata').value)
     })});
+    await registrar('EDITOU', editTipo==='ENTRADA'?'Entrada':'Saída', document.getElementById('ed').value.trim(), v);
     fecharFolha(); await recarregar();
   }catch(e){ alert(e.message); b.textContent='Salvar correção'; b.disabled=false; }
 }
@@ -1533,6 +1598,7 @@ async function salvarMov(){
       descricao:document.getElementById('md').value.trim()||null,
       data_hora:montarDataHora(document.getElementById('mdata').value)
     })});
+    await registrar('CRIOU', movTipo==='ENTRADA'?'Entrada':'Saída', document.getElementById('md').value.trim()||movCat, v);
     fecharFolha(); await recarregar();
   }catch(e){ alert(e.message); b.textContent='Salvar lançamento'; b.disabled=false; }
 }
@@ -1540,7 +1606,10 @@ async function apagarMov(id){
   const m=movimentos.filter(function(x){return x.id===id})[0];
   if(m && !podeEditar(m)){ alert('Este lançamento tem mais de 72 horas e não pode mais ser excluído.'); return; }
   if(!confirm('Apagar este lançamento?'))return;
-  try{ await api('movimentos?id=eq.'+id,{method:'DELETE'}); fecharFolha(); await recarregar(); }catch(e){ alert(e.message); }
+  try{
+    await registrar('EXCLUIU', m&&m.tipo==='ENTRADA'?'Entrada':'Saída', (m&&m.desc)||'', m&&m.valor, m?{data_hora:new Date(m.ts).toISOString(),tipo:m.tipo,categoria:m.categoria,valor:m.valor,descricao:m.desc}:null);
+    await api('movimentos?id=eq.'+id,{method:'DELETE'}); fecharFolha(); await recarregar();
+  }catch(e){ alert(e.message); }
 }
 
 // ============================================================
@@ -1709,6 +1778,7 @@ async function reabrirConta(id){
     const movs=movimentos.filter(function(m){ return m.contaId===id; });
     for(let i=0;i<movs.length;i++) await api('movimentos?id=eq.'+movs[i].id,{method:'DELETE'});
     await api('contas?id=eq.'+id,{method:'PATCH',body:JSON.stringify({status:'PENDENTE',data_baixa:null})});
+    await registrar('REABRIU','Conta',c.desc,c.valor);
     await recarregar(); fecharFolha();
   }catch(e){ alert(e.message); }
 }
@@ -1766,6 +1836,7 @@ async function salvarConta(continuar){
       linha_digitavel:(el&&el.value.replace(/\D/g,''))||null,
       documento: ultimoCodigoLido?documentoDe(ultimoCodigoLido):null
     })});
+    await registrar('CRIOU', boleto?'Boleto':despesa?'Despesa':'A receber', descricao, v);
     if(boleto && ultimoCodigoLido){
       await aprenderBeneficiario(chaveBeneficiario(ultimoCodigoLido), document.getElementById('cd').value.trim());
     }
@@ -2019,6 +2090,7 @@ async function salvarConta(continuar){
       linha_digitavel:(el&&el.value.replace(/\D/g,''))||null,
       documento: ultimoCodigoLido?documentoDe(ultimoCodigoLido):null
     })});
+    await registrar('CRIOU', boleto?'Boleto':despesa?'Despesa':'A receber', descricao, v);
     if(boleto && ultimoCodigoLido){
       await aprenderBeneficiario(chaveBeneficiario(ultimoCodigoLido), document.getElementById('cd').value.trim());
     }
@@ -2062,6 +2134,7 @@ async function confirmarBaixa(id){
       data_hora:montarDataHora(data),
       conta_id:c.id
     })});
+    await registrar('PAGOU', c.tipo==='PAGAR'?'Boleto/Conta':'Recebimento', c.desc, c.valor);
     fecharFolha(); await recarregar();
   }catch(e){ alert(e.message); b.textContent='Confirmar'; b.disabled=false; }
 }
@@ -2071,7 +2144,10 @@ async function apagarConta(id){
     ? 'Apagar esta conta? O lançamento correspondente também sairá do caixa.'
     : 'Apagar esta conta?';
   if(!confirm(aviso))return;
-  try{ await api('contas?id=eq.'+id,{method:'DELETE'}); await recarregar(); }catch(e){ alert(e.message); }
+  try{
+    await registrar('EXCLUIU', c&&c.origem==='BOLETO'?'Boleto':'Conta', (c&&c.desc)||'', c&&c.valor, c?{tipo:c.tipo,origem:c.origem,categoria:c.categoria,valor:c.valor,vencimento:c.venc,descricao:c.desc,status:c.status,documento:c.documento}:null);
+    await api('contas?id=eq.'+id,{method:'DELETE'}); fecharFolha&&fecharFolha(); await recarregar();
+  }catch(e){ alert(e.message); }
 }
 
 // ============================================================
