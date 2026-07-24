@@ -137,6 +137,24 @@
   .totalAberto{display:flex;justify-content:space-between;align-items:center;background:var(--amberSoft);border:1px solid #F5D5D1;border-radius:12px;padding:11px 14px;font-size:13px;color:var(--pine)}
   .totalAberto strong{font-family:var(--g);font-size:16px}
   .previa{font-size:13px;font-weight:600;color:var(--emerald);text-align:center;min-height:18px;margin-top:6px}
+  .drawerFundo{position:fixed;inset:0;background:#0E1F1A80;z-index:90;display:flex;justify-content:flex-end}
+  .drawer{background:var(--paper);width:82%;max-width:340px;height:100%;overflow-y:auto;padding:0 0 24px;transform:translateX(100%);transition:transform .22s ease}
+  .drawer.drAberto{transform:translateX(0)}
+  .drTopo{display:flex;align-items:center;gap:11px;padding:20px 18px;background:linear-gradient(135deg,var(--pineSoft),var(--pine));color:#fff}
+  .drNome{font-family:var(--g);font-size:16px;font-weight:600}
+  .drEmail{font-size:11.5px;color:var(--amberGlass);margin-top:2px;word-break:break-all}
+  .drSecao{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:16px 18px 6px;font-family:var(--g)}
+  .drItem{display:flex;align-items:center;gap:13px;width:100%;background:none;border:none;padding:11px 18px;cursor:pointer;text-align:left;font-family:var(--i)}
+  .drItem:active{background:#EAE4E2}
+  .drIcone{width:34px;height:34px;border-radius:10px;background:var(--amberSoft);color:var(--pine);display:grid;place-items:center;flex-shrink:0}
+  .drIcone svg{width:17px;height:17px}
+  .drTit{font-size:14px;font-weight:500;color:var(--ink)}
+  .drSub{font-size:11.5px;color:var(--muted);margin-top:1px}
+  .drRodape{text-align:center;font-size:11px;color:var(--muted);margin-top:22px;padding:0 18px}
+  .detVal{font-family:var(--g);font-size:30px;font-weight:700;text-align:center;margin:4px 0 12px}
+  .detLinha{display:flex;justify-content:space-between;padding:10px 2px;border-bottom:1px solid var(--line);font-size:13.5px}
+  .detLinha span{color:var(--muted)}
+  .detLinha strong{font-weight:600}
   .btnExcluir{width:100%;background:transparent;color:var(--rose);border:1px solid #F0C4CB;border-radius:12px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--i);margin-top:10px}
   .import{display:flex;align-items:center;justify-content:center;gap:10px;background:var(--amberSoft);border:1px dashed var(--pineSoft);border-radius:12px;padding:13px;font-size:13.5px;font-weight:600;color:var(--pine);cursor:pointer;width:100%}
   .import svg{width:18px;height:18px}
@@ -562,6 +580,43 @@ function aplicaFiltroMes(lista){
     return t>=ini && t<fim;
   });
 }
+// ============================================================
+//  MENU LATERAL (configurações e ferramentas)
+// ============================================================
+function abrirMenu(){
+  const ov=document.createElement('div');
+  ov.className='drawerFundo'; ov.id='drawerFundo';
+  ov.onclick=function(e){ if(e.target===ov) fecharMenu(); };
+  const s=Sessao.ler();
+  const item=function(icone,titulo,sub,acao){
+    return '<button class="drItem" onclick="fecharMenu();'+acao+'">'+
+      '<div class="drIcone">'+icone+'</div>'+
+      '<div><div class="drTit">'+titulo+'</div>'+(sub?'<div class="drSub">'+sub+'</div>':'')+'</div></button>';
+  };
+  ov.innerHTML='<div class="drawer" id="drawer">'+
+    '<div class="drTopo"><div class="marca"><img src="icone-192.png" alt=""/></div>'+
+      '<div><div class="drNome">Farma Família</div><div class="drEmail">'+((s&&s.email)||'')+'</div></div></div>'+
+
+    '<div class="drSecao">Categorias</div>'+
+    item(IC.rel,'Reclassificar categorias','Corrigir a categoria em massa',"abrirReclassificar()")+
+    item(IC.contas,'Gerenciar categorias','Criar, renomear, excluir',"abrirGerenciarCategorias()")+
+
+    '<div class="drSecao">Contas</div>'+
+    item(IC.relogio,'Contas de todo mês','Aluguel, luz, salário…',"abrirRecorrentes()")+
+    item(IC.alerta,'Avisos de vencimento',(avisosLigados()?'Ligados':'Desligados'),"pedirPermissaoAviso()")+
+
+    '<div class="drSecao">Conferência</div>'+
+    item(IC.lupa,'Auditoria dos dados','Verifica a sincronização',"abrirAuditoria()")+
+    item(IC.contas,'Lançamentos repetidos','Procura duplicidades',"conferirDuplicados()")+
+    item(IC.baixar,'Exportar CSV','Planilha do período',"irPara('rel')")+
+
+    '<div class="drRodape">Farma Família · controle comercial</div>'+
+  '</div>';
+  document.body.appendChild(ov);
+  requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
+}
+function fecharMenu(){ const o=document.getElementById('drawerFundo'); if(o) o.remove(); }
+
 // ============================================================
 //  AUDITORIA — confere se as tabelas estão sincronizadas
 // ============================================================
@@ -1154,6 +1209,7 @@ const IC={
   lixo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>',
   baixar:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>',
   sair:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>',
+  menu:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>',
   lupa:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
   camera:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>'
 };
@@ -1206,7 +1262,7 @@ function montarApp(){
         '</div>'+
         '<div style="display:flex;gap:8px">'+
           '<button class="sair" onclick="abrirBusca()" title="Buscar">'+IC.lupa+'</button>'+
-          '<button class="sair" onclick="sair()" title="'+((s&&s.email)||'')+'">'+IC.sair+'</button>'+
+          '<button class="sair" onclick="abrirMenu()" title="Menu">'+IC.menu+'</button>'+
         '</div>'+
       '</header>'+
       '<main id="main"></main>'+
@@ -1608,20 +1664,53 @@ function vContas(){
           : dias===0? {t:'Vence hoje',c:'var(--rose)',bg:'#FDECEC'}
           : dias<=3 ? {t:'Vence em '+dias+'d',c:'#8A5A00',bg:'#FDF1DC'}
           : {t:'Vence '+dm(c.venc),c:'var(--muted)',bg:'#EEEAE9'};
-        return '<div class="item"><div style="flex:1">'+
+        return '<div class="item" style="cursor:pointer" onclick="abrirContaDetalhe(\''+c.id+'\')"><div style="flex:1">'+
           '<div style="font-size:14px;font-weight:500">'+c.desc+'</div>'+
           '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">'+
             '<span class="tag" style="color:'+st.c+';background:'+st.bg+'">'+st.t+'</span>'+
             (c.categoria?'<span class="tag" style="color:var(--muted);background:#EEEAE9">'+c.categoria+'</span>':'')+
           '</div></div>'+
           '<div style="text-align:right"><div class="val2" style="font-size:16px">'+brl(c.valor)+'</div>'+
-          (c.status!=='PAGO'?'<button class="pagarBtn" onclick="quitar(\''+c.id+'\')">'+(contaAba==='RECEBER'?'Marcar recebido':'Marcar pago')+'</button>':'')+
-          '<button class="lixo" onclick="apagarConta(\''+c.id+'\')" style="margin-top:4px">'+IC.lixo+'</button>'+
+          '<div style="font-size:10.5px;color:var(--muted);margin-top:4px">toque para ver</div>'+
           '</div></div>';
       }).join('')
     : '<div class="vazio">'+(filtroVenc==='todos'?'Nenhum registro aqui. Toque em + para adicionar.':'Nenhuma conta neste período.')+'</div>';
 
   return cabecalho + painelVencimentos(lista) + painelMeses(lista) + '<h2 class="sec">Lista</h2>' + itens;
+}
+// Detalhe da conta — aqui ficam as ações (pagar, editar, excluir), longe da lista
+function abrirContaDetalhe(id){
+  const c=contas.filter(function(x){ return x.id===id; })[0]; if(!c) return;
+  const receber=c.tipo==='RECEBER';
+  const dias=diasAte(c.venc);
+  const sit = c.status==='PAGO' ? (receber?'Recebido':'Pago')
+    : dias<0 ? 'Em atraso' : dias===0 ? 'Vence hoje' : 'Vence em '+dias+' dia(s)';
+  abrirFolha(c.desc,
+    '<div class="detVal">'+brl(c.valor)+'</div>'+
+    '<div class="detLinha"><span>Situação</span><strong>'+sit+'</strong></div>'+
+    '<div class="detLinha"><span>Vencimento</span><strong>'+dm(c.venc)+'</strong></div>'+
+    (c.categoria?'<div class="detLinha"><span>Categoria</span><strong>'+c.categoria+'</strong></div>':'')+
+    (c.documento?'<div class="detLinha"><span>Nº do boleto</span><strong>'+c.documento+'</strong></div>':'')+
+    (c.status==='PAGO'
+      ? '<button class="btnS" style="width:100%;margin-top:14px" onclick="reabrirConta(\''+c.id+'\')">Marcar como não '+(receber?'recebido':'pago')+'</button>'
+      : '<button class="primario" style="margin-top:14px" onclick="confirmarPagamento(\''+c.id+'\')">'+(receber?'Confirmar recebimento':'Confirmar pagamento')+'</button>')+
+    '<button class="btnExcluir" onclick="apagarConta(\''+c.id+'\')">Excluir esta conta</button>');
+}
+function confirmarPagamento(id){
+  const c=contas.filter(function(x){ return x.id===id; })[0]; if(!c) return;
+  fecharFolha();
+  quitar(id);   // já abre a folha pedindo a data do pagamento
+}
+async function reabrirConta(id){
+  const c=contas.filter(function(x){ return x.id===id; })[0]; if(!c) return;
+  if(!confirm('Voltar esta conta para "em aberto"?\n\nO lançamento correspondente sairá do caixa.')) return;
+  try{
+    // remove o lançamento vinculado e reabre a conta
+    const movs=movimentos.filter(function(m){ return m.contaId===id; });
+    for(let i=0;i<movs.length;i++) await api('movimentos?id=eq.'+movs[i].id,{method:'DELETE'});
+    await api('contas?id=eq.'+id,{method:'PATCH',body:JSON.stringify({status:'PENDENTE',data_baixa:null})});
+    await recarregar(); fecharFolha();
+  }catch(e){ alert(e.message); }
 }
 let despCat='Frete';
 let ultimoCodigoLido=null;   // código de barras do boleto que acabou de ser lido
@@ -2053,14 +2142,7 @@ function vRel(){
     blocoCategorias('Saídas por categoria','SAIDA',iv,'var(--rose)')+
     blocoCategorias('Entradas por categoria','ENTRADA',iv,'var(--emerald)')+
     '<button class="btnS" style="width:100%;margin-top:6px" onclick="exportarCsv()">'+IC.baixar+' Exportar em CSV (Excel)</button>'+
-    '<button class="btnS" style="width:100%;margin-top:8px" onclick="abrirComparativo()">Comparar com o mês anterior</button>'+
-    '<h2 class="sec" style="margin-top:14px">Ferramentas</h2>'+
-    '<button class="btnS" style="width:100%" onclick="abrirReclassificar()">Reclassificar categorias</button>'+
-    '<button class="btnS" style="width:100%;margin-top:8px" onclick="abrirGerenciarCategorias()">Gerenciar categorias (criar, renomear, excluir)</button>'+
-    '<button class="btnS" style="width:100%;margin-top:8px" onclick="abrirRecorrentes()">Contas de todo mês</button>'+
-    '<button class="btnS" style="width:100%;margin-top:8px" onclick="conferirDuplicados()">Conferir lançamentos repetidos</button>'+
-    '<button class="btnS" style="width:100%;margin-top:8px" onclick="abrirAuditoria()">Auditoria dos dados</button>'+
-    '<button class="btnS" style="width:100%;margin-top:8px" onclick="pedirPermissaoAviso()">'+(avisosLigados()?'Avisos de vencimento: ligados':'Ativar avisos de vencimento')+'</button>';
+    '<button class="btnS" style="width:100%;margin-top:8px" onclick="abrirComparativo()">Comparar com o mês anterior</button>';
   }
   return '<div class="chips">'+per.map(function(p){ return '<button class="chip '+(relPeriodo===p[0]?'on':'')+'" onclick="relPeriodo=\''+p[0]+'\';render()">'+p[1]+'</button>'; }).join('')+'</div>'+
     (relPeriodo==='custom'?'<div class="duo"><div style="flex:1"><label class="campo">De</label><input type="date" value="'+relDe+'" onchange="relDe=this.value;render()"/></div><div style="flex:1"><label class="campo">Até</label><input type="date" value="'+relAte+'" onchange="relAte=this.value;render()"/></div></div>':'')+
