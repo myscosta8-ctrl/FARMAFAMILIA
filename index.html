@@ -2323,7 +2323,7 @@ function abrirConta(){
     (despesa?'<label class="campo">Categoria</label><div id="dCatsSug" class="sugLinha"></div><div class="chips" id="dCats"></div>':'')+
     (boleto?'<label class="campo">Linha digitável (opcional — preenche valor e vencimento)</label><input id="cl" inputmode="numeric" oninput="autoLinha()" placeholder="Números do boleto"/>':'')+
     '<label class="campo">Valor</label><input id="cv" inputmode="numeric" placeholder="0,00" oninput="mascaraMoeda(this);previa(\'cv\',\'cPrev\')"/><div id="cPrev" class="previa"></div>'+
-    '<label class="campo">'+(despesa?'Data / vencimento':'Vencimento')+'</label><input id="cvenc" type="date" value="'+(despesa?hojeISO():'')+'"/>'+
+    '<label class="campo">'+(despesa?'Data / vencimento':'Vencimento')+' <span id="cvencOpc" style="font-weight:400;color:var(--muted)"></span></label><input id="cvenc" type="date" value="'+(despesa?hojeISO():'')+'"/>'+
     (boleto?'<div class="dica">Fotografe o boleto ou digite a linha — o valor e o vencimento aparecem sozinhos.</div>':'')+
     '<div class="item" style="margin-top:12px"><div style="flex:1">'+
       '<div style="font-size:14px;font-weight:500">'+(receber?'Já foi recebida':'Já foi paga')+'</div>'+
@@ -2356,18 +2356,29 @@ function alternarJaPago(){
   const venc=document.getElementById('cvenc');
   const dpag=document.getElementById('cdpag');
   if(contaJaPaga && venc && dpag && venc.value) dpag.value = venc.value <= hojeISO() ? venc.value : hojeISO();
+  const opc=document.getElementById('cvencOpc');
+  if(opc) opc.textContent = contaJaPaga ? '(opcional)' : '';
 }
 async function salvarConta(continuar){
   const v=parseValor(document.getElementById('cv').value);
-  const venc=document.getElementById('cvenc').value;
-  if(!v||isNaN(v)||!venc){alert('Informe valor e data.');return;}
+  const campoPagto=document.getElementById('cdpag');
+  const dPago=(contaJaPaga&&campoPagto)?campoPagto.value:'';
+  // Se a conta já foi paga, a data do pagamento vale como referência —
+  // não é preciso lembrar o vencimento original.
+  let venc=document.getElementById('cvenc').value || (contaJaPaga?dPago:'');
+  if(!v||isNaN(v)){ alert('Informe o valor.'); return; }
+  if(!venc){
+    alert(contaJaPaga
+      ? 'Informe a data do pagamento.'
+      : 'Informe o vencimento.\n\nSe a conta já foi paga, ligue "Já foi paga" e informe a data do pagamento.');
+    return;
+  }
   const el=document.getElementById('cl');
   const boleto = contaAba==='BOLETO';
   const despesa = contaAba==='DESPESA';
   const descricao=document.getElementById('cd').value.trim()||(boleto?'Boleto':despesa?'Despesa':'Recebimento');
   const docNum = ultimoCodigoLido?documentoDe(ultimoCodigoLido):null;
-  const campoPag=document.getElementById('cdpag');
-  const dataPag=(contaJaPaga&&campoPag&&campoPag.value)?campoPag.value:venc;
+  const dataPag=dPago||venc;
   const rep=contaRepetida({descricao:descricao, valor:v, vencimento:venc, documento:docNum,
                            linha:(el&&el.value.replace(/\D/g,''))||null});
   if(rep && !confirmarRepetido(rep)) return;
