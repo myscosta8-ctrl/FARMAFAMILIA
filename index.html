@@ -2065,20 +2065,6 @@ async function salvarVenda(){
 // ============================================================
 //  CAIXA
 // ============================================================
-// Um lançamento só pode ser editado ou apagado nas primeiras 72 horas
-// depois de criado. Depois disso, o histórico fica travado.
-const PRAZO_EDICAO_MS = 72*3600000;
-function podeEditar(m){
-  if(!m.criadoEm) return true;              // lançamentos antigos sem registro
-  return (Date.now()-m.criadoEm) < PRAZO_EDICAO_MS;
-}
-function horasRestantes(m){
-  if(!m.criadoEm) return null;
-  const resta=PRAZO_EDICAO_MS-(Date.now()-m.criadoEm);
-  if(resta<=0) return 0;
-  const h=Math.floor(resta/3600000);
-  return h<1 ? '<1' : h;
-}
 let caixaData='';
 function vCaixa(){
   if(!caixaData) caixaData=hojeISO();
@@ -2326,7 +2312,7 @@ function abrirConta(){
   const boleto = contaAba==='BOLETO';
   const receber = contaAba==='RECEBER';
   const despesa = contaAba==='DESPESA';
-  despCat='Frete';
+  despCat='Frete'; contaJaPaga=false;
   const titulo = boleto?'Adicionar boleto' : despesa?'Adicionar despesa' : 'Adicionar conta a receber';
   abrirFolha(titulo,
     (boleto?'<button type="button" class="foto" onclick="abrirScannerBoleto()">'+IC.camera+' Ler código de barras</button>'+
@@ -2339,6 +2325,14 @@ function abrirConta(){
     '<label class="campo">Valor</label><input id="cv" inputmode="numeric" placeholder="0,00" oninput="mascaraMoeda(this);previa(\'cv\',\'cPrev\')"/><div id="cPrev" class="previa"></div>'+
     '<label class="campo">'+(despesa?'Data / vencimento':'Vencimento')+'</label><input id="cvenc" type="date" value="'+(despesa?hojeISO():'')+'"/>'+
     (boleto?'<div class="dica">Fotografe o boleto ou digite a linha — o valor e o vencimento aparecem sozinhos.</div>':'')+
+    '<div class="item" style="margin-top:12px"><div style="flex:1">'+
+      '<div style="font-size:14px;font-weight:500">'+(receber?'Já foi recebida':'Já foi paga')+'</div>'+
+      '<div style="font-size:11.5px;color:var(--muted)">Marque se o pagamento já aconteceu</div></div>'+
+      '<button class="chave" id="cPago" onclick="alternarJaPago()"><span></span></button></div>'+
+    '<div id="cPagoData" style="display:none">'+
+      '<label class="campo">'+(receber?'Data do recebimento':'Data do pagamento')+'</label>'+
+      '<input id="cdpag" type="date" value="'+hojeISO()+'"/>'+
+      '<div class="dica">Entra no caixa nesta data.</div></div>'+
     '<button class="primario" id="cBtn">Salvar</button>'+
     (boleto?'<button class="btnS" style="width:100%;margin-top:10px" id="cBtn2">Salvar e ler o próximo</button>':''),
     function(){
@@ -2351,6 +2345,18 @@ function abrirConta(){
       if(b2) b2.onclick=function(){ salvarConta(true); };
     });
 }
+let contaJaPaga=false;
+function alternarJaPago(){
+  contaJaPaga=!contaJaPaga;
+  const ch=document.getElementById('cPago');
+  const bloco=document.getElementById('cPagoData');
+  if(ch) ch.className='chave'+(contaJaPaga?' chaveOn':'');
+  if(bloco) bloco.style.display=contaJaPaga?'block':'none';
+  // por padrão, a data do pagamento acompanha o vencimento informado
+  const venc=document.getElementById('cvenc');
+  const dpag=document.getElementById('cdpag');
+  if(contaJaPaga && venc && dpag && venc.value) dpag.value = venc.value <= hojeISO() ? venc.value : hojeISO();
+}
 async function salvarConta(continuar){
   const v=parseValor(document.getElementById('cv').value);
   const venc=document.getElementById('cvenc').value;
@@ -2360,21 +2366,37 @@ async function salvarConta(continuar){
   const despesa = contaAba==='DESPESA';
   const descricao=document.getElementById('cd').value.trim()||(boleto?'Boleto':despesa?'Despesa':'Recebimento');
   const docNum = ultimoCodigoLido?documentoDe(ultimoCodigoLido):null;
+  const campoPag=document.getElementById('cdpag');
+  const dataPag=(contaJaPaga&&campoPag&&campoPag.value)?campoPag.value:venc;
   const rep=contaRepetida({descricao:descricao, valor:v, vencimento:venc, documento:docNum,
                            linha:(el&&el.value.replace(/\D/g,''))||null});
   if(rep && !confirmarRepetido(rep)) return;
   const b=document.getElementById('cBtn'); b.textContent='Salvando…'; b.disabled=true;
   try{
-    await api('contas',{method:'POST',body:JSON.stringify({
+    const criadaResp=await api('contas',{method:'POST',body:JSON.stringify({
       tipo: contaAba==='RECEBER'?'RECEBER':'PAGAR',
       origem: boleto?'BOLETO':'MANUAL',
       categoria: despesa?despCat:null,
       descricao:document.getElementById('cd').value.trim()||(boleto?'Boleto':despesa?'Despesa':'Recebimento'),
-      valor:v, vencimento:venc, status:'PENDENTE',
+      valor:v, vencimento:venc,
+      status: contaJaPaga?'PAGO':'PENDENTE',
+      data_baixa: contaJaPaga?montarDataHora(dataPag):null,
       linha_digitavel:(el&&el.value.replace(/\D/g,''))||null,
       documento: ultimoCodigoLido?documentoDe(ultimoCodigoLido):null
     })});
-    await registrar('CRIOU', boleto?'Boleto':despesa?'Despesa':'A receber', descricao, v);
+    // se já foi paga, lança no caixa junto e deixa os dois ligados
+    if(contaJaPaga){
+      // usa o id devolvido pela própria criação (evita pegar a conta de outra pessoa)
+      const idNova=(criadaResp&&criadaResp[0])?criadaResp[0].id:null;
+      await api('movimentos',{method:'POST',body:JSON.stringify({
+        tipo: contaAba==='RECEBER'?'ENTRADA':'SAIDA',
+        categoria: despesa?despCat:(boleto?'Distribuidor':'Outros'),
+        valor:v, descricao:descricao,
+        data_hora:montarDataHora(dataPag),
+        conta_id:idNova
+      })});
+    }
+    await registrar(contaJaPaga?'PAGOU':'CRIOU', boleto?'Boleto':despesa?'Despesa':'A receber', descricao, v);
     if(boleto && ultimoCodigoLido){
       await aprenderBeneficiario(ultimoCodigoLido, document.getElementById('cd').value.trim());
     }
@@ -2603,38 +2625,6 @@ function autoLinha(){
       aviso.textContent='Lido: '+brl(r.dados.valor)+(r.dados.vencimento?' · vence '+dm(r.dados.vencimento.toISOString().slice(0,10)):'');
     }
   }
-}
-async function salvarConta(continuar){
-  const v=parseValor(document.getElementById('cv').value);
-  const venc=document.getElementById('cvenc').value;
-  if(!v||isNaN(v)||!venc){alert('Informe valor e data.');return;}
-  const el=document.getElementById('cl');
-  const boleto = contaAba==='BOLETO';
-  const despesa = contaAba==='DESPESA';
-  const descricao=document.getElementById('cd').value.trim()||(boleto?'Boleto':despesa?'Despesa':'Recebimento');
-  const docNum = ultimoCodigoLido?documentoDe(ultimoCodigoLido):null;
-  const rep=contaRepetida({descricao:descricao, valor:v, vencimento:venc, documento:docNum,
-                           linha:(el&&el.value.replace(/\D/g,''))||null});
-  if(rep && !confirmarRepetido(rep)) return;
-  const b=document.getElementById('cBtn'); b.textContent='Salvando…'; b.disabled=true;
-  try{
-    await api('contas',{method:'POST',body:JSON.stringify({
-      tipo: contaAba==='RECEBER'?'RECEBER':'PAGAR',
-      origem: boleto?'BOLETO':'MANUAL',
-      categoria: despesa?despCat:null,
-      descricao:document.getElementById('cd').value.trim()||(boleto?'Boleto':despesa?'Despesa':'Recebimento'),
-      valor:v, vencimento:venc, status:'PENDENTE',
-      linha_digitavel:(el&&el.value.replace(/\D/g,''))||null,
-      documento: ultimoCodigoLido?documentoDe(ultimoCodigoLido):null
-    })});
-    await registrar('CRIOU', boleto?'Boleto':despesa?'Despesa':'A receber', descricao, v);
-    if(boleto && ultimoCodigoLido){
-      await aprenderBeneficiario(ultimoCodigoLido, document.getElementById('cd').value.trim());
-    }
-    ultimoCodigoLido=null;
-    fecharFolha(); await recarregar();
-    if(continuar){ abrirConta(); setTimeout(abrirScannerBoleto,120); }
-  }catch(e){ alert(e.message); b.textContent='Salvar'; b.disabled=false; }
 }
 // ---------- Leitura do boleto: câmera ao vivo (rápida) ----------
 // Pergunta a data do pagamento antes de dar baixa, para que o lançamento
