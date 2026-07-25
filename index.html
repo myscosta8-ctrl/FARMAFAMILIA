@@ -581,6 +581,122 @@ function aplicaFiltroMes(lista){
   });
 }
 // ============================================================
+//  BACKUP DOS DADOS
+// ============================================================
+// Monta um pacote com tudo do banco. Serve para guardar fora do app
+// (Drive, e-mail, WhatsApp) e para restaurar se algo se perder.
+async function montarBackup(){
+  const alvos=['movimentos','contas','produtos','categorias','recorrentes','beneficiarios','historico'];
+  const pacote={ app:'Farma Familia', versao:1, gerado_em:new Date().toISOString(), tabelas:{} };
+  for(let i=0;i<alvos.length;i++){
+    try{ pacote.tabelas[alvos[i]]=await api(alvos[i]+'?select=*')||[]; }
+    catch(e){ pacote.tabelas[alvos[i]]=[]; }
+  }
+  return pacote;
+}
+function nomeArquivoBackup(){
+  const d=new Date();
+  const p=function(n){ return String(n).padStart(2,'0'); };
+  return 'backup-farmafamilia-'+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'+p(d.getHours())+p(d.getMinutes())+'.json';
+}
+async function baixarBackup(){
+  const b=document.getElementById('bkBtn');
+  if(b){ b.textContent='Gerando…'; b.disabled=true; }
+  try{
+    const pacote=await montarBackup();
+    const txt=JSON.stringify(pacote);
+    const blob=new Blob([txt],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download=nomeArquivoBackup(); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(url); },2000);
+    // guarda também uma cópia local (última salva) e a data
+    try{ localStorage.setItem('ultimoBackup', new Date().toISOString()); }catch(e){}
+    const cont=totaisBackup(pacote);
+    if(b){ b.textContent='Salvar backup'; b.disabled=false; }
+    alert('Backup gerado.\n\n'+cont+'\n\nGuarde o arquivo no Drive, e-mail ou WhatsApp. Se precisar, ele restaura tudo.');
+  }catch(e){
+    if(b){ b.textContent='Salvar backup'; b.disabled=false; }
+    alert('Não consegui gerar o backup: '+e.message);
+  }
+}
+function totaisBackup(pacote){
+  const t=pacote.tabelas||{};
+  return (t.movimentos||[]).length+' lançamentos · '+
+         (t.contas||[]).length+' contas · '+
+         (t.categorias||[]).length+' categorias';
+}
+function ultimoBackupTexto(){
+  try{
+    const iso=localStorage.getItem('ultimoBackup');
+    if(!iso) return 'Nenhum backup salvo ainda.';
+    const d=new Date(iso), ag=new Date();
+    const dias=Math.floor((ag-d)/86400000);
+    const quando=d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+    return 'Último backup: '+quando+(dias>=3?' — faz '+dias+' dias, vale gerar um novo':'');
+  }catch(e){ return ''; }
+}
+
+// Restauração: relê um arquivo de backup e reinsere o que estiver faltando
+function abrirRestaurar(){
+  abrirFolha('Restaurar backup',
+    '<div class="dica" style="margin-top:0">Selecione um arquivo de backup (.json). O app vai <b>adicionar de volta</b> os registros que não existem mais. Nada do que está hoje é apagado.</div>'+
+    '<label class="foto" style="margin-top:10px"><span>'+IC.baixar+' Escolher arquivo de backup</span>'+
+    '<input type="file" accept=".json,application/json" onchange="restaurarBackup(event)" style="display:none"/></label>'+
+    '<div id="rsAviso" class="dica"></div>');
+}
+async function restaurarBackup(ev){
+  const f=ev.target.files[0]; if(!f) return;
+  const aviso=document.getElementById('rsAviso');
+  if(aviso){ aviso.innerHTML='<span class="girando">◜</span> Lendo o arquivo…'; aviso.style.color='var(--muted)'; }
+  let pacote=null;
+  try{ pacote=JSON.parse(await f.text()); }
+  catch(e){ if(aviso){ aviso.textContent='Arquivo inválido.'; aviso.style.color='var(--rose)'; } return; }
+  if(!pacote.tabelas){ if(aviso){ aviso.textContent='Este arquivo não parece um backup do Farma Família.'; aviso.style.color='var(--rose)'; } return; }
+  if(!confirm('Restaurar a partir de '+(pacote.gerado_em?new Date(pacote.gerado_em).toLocaleString('pt-BR'):'?')+'?\n\n'+totaisBackup(pacote)+'\n\nSó serão adicionados registros que não existem hoje.')) return;
+
+  // ids já presentes, para não duplicar
+  const existentes={};
+  ['movimentos','contas','categorias','recorrentes','beneficiarios'].forEach(function(tb){
+    existentes[tb]={};
+    (tb==='movimentos'?movimentos:tb==='contas'?contas:[]).forEach(function(x){ existentes[tb][x.id]=1; });
+  });
+  let add=0;
+  async function repoe(tb){
+    const linhas=pacote.tabelas[tb]||[];
+    for(let i=0;i<linhas.length;i++){
+      const row=linhas[i];
+      try{
+        await api(tb,{method:'POST',headers:{'Prefer':'resolution=ignore-duplicates'},body:JSON.stringify(row)});
+        add++;
+      }catch(e){ /* já existe */ }
+    }
+  }
+  try{
+    // ordem importa: contas antes de movimentos (por causa do vínculo)
+    await repoe('categorias'); await repoe('recorrentes'); await repoe('beneficiarios');
+    await repoe('contas'); await repoe('movimentos');
+    await recarregar(); fecharFolha();
+    alert('Restauração concluída. '+add+' registro(s) adicionado(s) de volta.');
+  }catch(e){ if(aviso){ aviso.textContent=e.message; aviso.style.color='var(--rose)'; } }
+}
+
+// Lembrete: se faz muitos dias sem backup, avisa uma vez ao abrir
+function lembrarBackup(){
+  try{
+    const iso=localStorage.getItem('ultimoBackup');
+    const hoje=hojeISO();
+    if(localStorage.getItem('avisoBackupDia')===hoje) return;
+    let dias=99;
+    if(iso) dias=Math.floor((Date.now()-new Date(iso).getTime())/86400000);
+    if(dias>=7){
+      localStorage.setItem('avisoBackupDia',hoje);
+      setTimeout(function(){
+        if(confirm('Faz '+(iso?dias+' dias':'um tempo')+' que não é feito um backup dos dados.\n\nQuer gerar um agora? (leva alguns segundos)')) baixarBackup();
+      },1500);
+    }
+  }catch(e){}
+}
+// ============================================================
 //  HISTÓRICO — registra quem fez o quê
 // ============================================================
 async function registrar(acao, entidade, descricao, valor, detalhe){
@@ -667,6 +783,10 @@ function abrirMenu(){
     '<div class="drSecao">Contas</div>'+
     item(IC.relogio,'Contas de todo mês','Aluguel, luz, salário…',"abrirRecorrentes()")+
     item(IC.alerta,'Avisos de vencimento',(avisosLigados()?'Ligados':'Desligados'),"pedirPermissaoAviso()")+
+
+    '<div class="drSecao">Backup e segurança</div>'+
+    item(IC.baixar,'Salvar backup',ultimoBackupTexto(),"baixarBackup()")+
+    item(IC.rel,'Restaurar backup','Recuperar de um arquivo',"abrirRestaurar()")+
 
     '<div class="drSecao">Conferência</div>'+
     item(IC.relogio,'Histórico de movimentações','Quem lançou, editou ou excluiu',"abrirHistorico()")+
@@ -2258,6 +2378,7 @@ function fecharFolha(){ pararScanner(); const o=document.getElementById('overlay
 async function aposCarregar(){
   try{ await carregarRecorrentes(); await gerarRecorrentes(); }catch(e){}
   try{ avisarVencimentos(false); }catch(e){}
+  try{ lembrarBackup(); }catch(e){}
 }
 async function iniciar(){
   document.getElementById('raiz').innerHTML='<div style="display:grid;place-items:center;height:100vh;background:var(--pine)"><span class="girando" style="color:var(--amber);font-size:34px">◜</span></div>';
