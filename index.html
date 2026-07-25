@@ -137,6 +137,16 @@
   .totalAberto{display:flex;justify-content:space-between;align-items:center;background:var(--amberSoft);border:1px solid #F5D5D1;border-radius:12px;padding:11px 14px;font-size:13px;color:var(--pine)}
   .totalAberto strong{font-family:var(--g);font-size:16px}
   .previa{font-size:13px;font-weight:600;color:var(--emerald);text-align:center;min-height:18px;margin-top:6px}
+  .chave{width:46px;height:27px;border-radius:14px;background:#D6CFCD;border:none;position:relative;cursor:pointer;flex-shrink:0;transition:background .15s}
+  .chave span{position:absolute;top:3px;left:3px;width:21px;height:21px;border-radius:50%;background:#fff;transition:left .15s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+  .chave.chaveOn{background:var(--emerald)}
+  .chave.chaveOn span{left:22px}
+  .admCartao{background:linear-gradient(150deg,var(--pineSoft),var(--pineDark));border-radius:16px;padding:15px 17px;color:#fff;margin-bottom:12px}
+  .admRot{font-size:11.5px;color:var(--amberGlass)}
+  .admNome{font-family:var(--g);font-size:17px;font-weight:600;margin-top:2px}
+  .admMail{font-size:11.5px;color:#FFD9D5;margin-top:2px;word-break:break-all}
+  .selo{display:inline-block;margin-top:5px;background:#FFFFFF33;color:#fff;border-radius:6px;padding:2px 8px;font-size:10.5px;font-weight:700;font-family:var(--g);letter-spacing:.02em}
+  .selo.seloOp{background:#FFFFFF22}
   .drawerFundo{position:fixed;inset:0;background:#0E1F1A80;z-index:90;display:flex;justify-content:flex-end}
   .drawer{background:var(--paper);width:82%;max-width:340px;height:100%;overflow-y:auto;padding:0 0 24px;transform:translateX(100%);transition:transform .22s ease}
   .drawer.drAberto{transform:translateX(0)}
@@ -278,6 +288,7 @@ async function carregarTudo(){
     contas     = (res[2]||[]).map(function(x){ return {id:x.id, tipo:x.tipo, origem:x.origem||'MANUAL', categoria:x.categoria||'', desc:x.descricao, valor:Number(x.valor), venc:x.vencimento, status:x.status, linha:x.linha_digitavel||'', documento:x.documento||''}; });
     montarCategorias(res[3]);
     carregarBeneficiarios();
+    await carregarPermissoes();
     montarHistorico();
     offline=false; guardarCopia();
   }catch(e){
@@ -581,6 +592,75 @@ function aplicaFiltroMes(lista){
   });
 }
 // ============================================================
+//  ADMINISTRADOR E PERMISSÕES
+// ============================================================
+let souAdmin=false;
+let permissoes={pode_excluir:true,pode_editar:true,pode_pagar:true,pode_criar:true,pode_ver_relatorios:true};
+let nomeAdmin='';
+
+async function carregarPermissoes(){
+  const s=Sessao.ler();
+  const meuEmail=((s&&s.email)||'').toLowerCase();
+  try{
+    const admins=await api('administrador_geral?select=*')||[];
+    souAdmin = admins.some(function(a){ return String(a.email||'').toLowerCase()===meuEmail; });
+    const eu=admins.filter(function(a){ return String(a.email||'').toLowerCase()===meuEmail; })[0];
+    nomeAdmin = eu?eu.nome:'';
+  }catch(e){ souAdmin=false; }
+  try{
+    const p=await api('permissoes_operadores?select=*&id=eq.1');
+    if(p&&p[0]) permissoes=p[0];
+  }catch(e){}
+}
+// O administrador nunca é limitado. Os demais seguem o que ele definiu.
+function podeFazer(acao){
+  if(souAdmin) return true;
+  if(acao==='excluir')  return permissoes.pode_excluir!==false;
+  if(acao==='editar')   return permissoes.pode_editar!==false;
+  if(acao==='pagar')    return permissoes.pode_pagar!==false;
+  if(acao==='criar')    return permissoes.pode_criar!==false;
+  if(acao==='relatorios') return permissoes.pode_ver_relatorios!==false;
+  return true;
+}
+function bloqueado(acao){
+  const nomes={excluir:'excluir registros',editar:'editar lançamentos',pagar:'dar baixa em contas',criar:'criar lançamentos',relatorios:'ver relatórios'};
+  alert('Você não tem permissão para '+(nomes[acao]||acao)+'.\n\nFale com o administrador do aplicativo.');
+}
+
+// Tela de administração — só o administrador enxerga
+function abrirAdministracao(){
+  if(!souAdmin){ alert('Área exclusiva do administrador.'); return; }
+  const linha=function(campo,titulo,sub){
+    const on=permissoes[campo]!==false;
+    return '<div class="item" style="margin-top:8px"><div style="flex:1">'+
+      '<div style="font-size:14px;font-weight:500">'+titulo+'</div>'+
+      '<div style="font-size:11.5px;color:var(--muted)">'+sub+'</div></div>'+
+      '<button class="chave'+(on?' chaveOn':'')+'" onclick="alternarPermissao(\''+campo+'\')"><span></span></button></div>';
+  };
+  abrirFolha('Administração',
+    '<div class="admCartao"><div class="admRot">Administrador geral</div>'+
+      '<div class="admNome">'+(nomeAdmin||'—')+'</div>'+
+      '<div class="admMail">'+((Sessao.ler()||{}).email||'')+'</div></div>'+
+    '<div class="dica">O que os outros usuários (Brenda e Naldo) podem fazer. Você nunca é limitado por estas chaves.</div>'+
+    linha('pode_criar','Criar lançamentos','Vendas, saídas, boletos, despesas')+
+    linha('pode_editar','Editar lançamentos','Corrigir dentro do prazo de 72h')+
+    linha('pode_excluir','Excluir registros','Apagar lançamentos e contas')+
+    linha('pode_pagar','Dar baixa em contas','Marcar boletos como pagos')+
+    linha('pode_ver_relatorios','Ver relatórios','Aba de relatórios e comparativos')+
+    '<div class="dica">As mudanças valem assim que a pessoa recarregar o aplicativo.</div>');
+}
+async function alternarPermissao(campo){
+  if(!souAdmin){ alert('Área exclusiva do administrador.'); return; }
+  const novo = permissoes[campo]===false;
+  const corpo={}; corpo[campo]=novo; corpo.atualizado_em=new Date().toISOString();
+  try{
+    await api('permissoes_operadores?id=eq.1',{method:'PATCH',body:JSON.stringify(corpo)});
+    permissoes[campo]=novo;
+    await registrar(novo?'LIBEROU':'BLOQUEOU','Permissão',campo,null);
+    fecharFolha(); abrirAdministracao();
+  }catch(e){ alert('Não consegui alterar: '+e.message); }
+}
+// ============================================================
 //  BACKUP DOS DADOS
 // ============================================================
 // Monta um pacote com tudo do banco. Serve para guardar fora do app
@@ -774,7 +854,8 @@ function abrirMenu(){
   };
   ov.innerHTML='<div class="drawer" id="drawer">'+
     '<div class="drTopo"><div class="marca"><img src="icone-192.png" alt=""/></div>'+
-      '<div><div class="drNome">Farma Família</div><div class="drEmail">'+((s&&s.email)||'')+'</div></div></div>'+
+      '<div><div class="drNome">Farma Família</div><div class="drEmail">'+((s&&s.email)||'')+'</div>'+
+      (souAdmin?'<span class="selo">Administrador</span>':'<span class="selo seloOp">Operador</span>')+'</div></div>'+
 
     '<div class="drSecao">Categorias</div>'+
     item(IC.rel,'Reclassificar categorias','Corrigir a categoria em massa',"abrirReclassificar()")+
@@ -783,6 +864,9 @@ function abrirMenu(){
     '<div class="drSecao">Contas</div>'+
     item(IC.relogio,'Contas de todo mês','Aluguel, luz, salário…',"abrirRecorrentes()")+
     item(IC.alerta,'Avisos de vencimento',(avisosLigados()?'Ligados':'Desligados'),"pedirPermissaoAviso()")+
+
+    (souAdmin?'<div class="drSecao">Administração</div>'+
+      item(IC.sair,'Usuários e permissões','O que Brenda e Naldo podem fazer',"abrirAdministracao()"):'')+
 
     '<div class="drSecao">Backup e segurança</div>'+
     item(IC.baixar,'Salvar backup',ultimoBackupTexto(),"baixarBackup()")+
@@ -1471,7 +1555,7 @@ function render(){
   else m.innerHTML=av+vRel();
   document.getElementById('fab').style.display=(aba==='caixa'||aba==='estoque'||aba==='contas')?'grid':'none';
 }
-function acaoFab(){ if(aba==='caixa')abrirMov(); else if(aba==='estoque')abrirProduto(); else if(aba==='contas')abrirConta(); }
+function acaoFab(){ if(!podeFazer('criar')){ bloqueado('criar'); return; } if(aba==='caixa')abrirMov(); else if(aba==='estoque')abrirProduto(); else if(aba==='contas')abrirConta(); }
 async function recarregar(){ try{ await carregarTudo(); }catch(e){ console.error(e); } render(); }
 
 // ============================================================
@@ -1580,6 +1664,7 @@ function horasRestantes(m){
 }
 let editTipo='ENTRADA',editCat='Venda';
 function abrirEditar(id){
+  if(!podeFazer('editar')){ bloqueado('editar'); return; }
   const m=movimentos.filter(function(x){return x.id===id})[0]; if(!m) return;
   if(!podeEditar(m)){ alert('Este lançamento tem mais de 72 horas e não pode mais ser alterado.'); return; }
   editTipo=m.tipo; editCat=m.categoria||CATS[m.tipo][0];
@@ -1622,6 +1707,7 @@ async function salvarEdicao(id){
   }catch(e){ alert(e.message); b.textContent='Salvar correção'; b.disabled=false; }
 }
 function abrirVenda(){
+  if(!podeFazer('criar')){ bloqueado('criar'); return; }
   abrirFolha('Lançar venda',
     '<label class="campo">Valor da venda</label>'+
     '<input id="vv" inputmode="numeric" placeholder="0,00" oninput="mascaraMoeda(this);previa(\'vv\',\'vPrev\')" style="font-size:24px;font-family:var(--g);text-align:center"/>'+
@@ -1723,6 +1809,7 @@ async function salvarMov(){
   }catch(e){ alert(e.message); b.textContent='Salvar lançamento'; b.disabled=false; }
 }
 async function apagarMov(id){
+  if(!podeFazer('excluir')){ bloqueado('excluir'); return; }
   const m=movimentos.filter(function(x){return x.id===id})[0];
   if(m && !podeEditar(m)){ alert('Este lançamento tem mais de 72 horas e não pode mais ser excluído.'); return; }
   if(!confirm('Apagar este lançamento?'))return;
@@ -2223,6 +2310,7 @@ async function salvarConta(continuar){
 // Pergunta a data do pagamento antes de dar baixa, para que o lançamento
 // caia no dia certo do caixa (e não sempre no dia de hoje).
 function quitar(id){
+  if(!podeFazer('pagar')){ bloqueado('pagar'); return; }
   const c=contas.filter(function(x){return x.id===id})[0]; if(!c)return;
   const receber=c.tipo==='RECEBER';
   // sugere a data do vencimento; se ainda não venceu, sugere hoje
@@ -2259,6 +2347,7 @@ async function confirmarBaixa(id){
   }catch(e){ alert(e.message); b.textContent='Confirmar'; b.disabled=false; }
 }
 async function apagarConta(id){
+  if(!podeFazer('excluir')){ bloqueado('excluir'); return; }
   const c=contas.filter(function(x){return x.id===id})[0];
   const aviso = (c && c.status==='PAGO')
     ? 'Apagar esta conta? O lançamento correspondente também sairá do caixa.'
