@@ -1883,7 +1883,15 @@ async function recarregar(){ try{ await carregarTudo(); }catch(e){ console.error
 function vInicio(){
   const r=resumoVendas(), a=alertas();
   let al='';
-  if(a.contas>0){ const p=a.proxima; al+=alertaCard(IC.relogio,'var(--rose)','#FDECEC',a.contas+' contas a vencer',p?('Próxima: '+p.desc+' · '+dm(p.venc)):'',brl(a.contasTotal),"irPara('contas')"); }
+  if(a.contas>0){
+    const p=a.proxima;
+    al+=alertaCard(IC.relogio,'var(--rose)','#FDECEC',
+      a.contas+' conta'+(a.contas===1?'':'s')+' a vencer em 7 dias','',
+      brl(a.contasTotal),"irPara('contas')",'Total');
+    if(p) al+=alertaCard(IC.contas,'var(--muted)','#EEEAE9',
+      'Próxima: '+p.desc, dm(p.venc)+(diasAte(p.venc)===0?' · vence hoje':diasAte(p.venc)<0?' · atrasada':' · em '+diasAte(p.venc)+' dia(s)'),
+      brl(p.valor),"irPara('contas')",'Valor');
+  }
   if(a.baixo>0) al+=alertaCard(IC.pacote,'var(--amber)','#FEF3D9',a.baixo+' produtos em falta','Abaixo do estoque mínimo','',"irPara('estoque')");
   if(a.venc>0) al+=alertaCard(IC.alerta,'var(--rose)','#FDECEC',a.venc+' produto(s) vencido(s)','Retirar do estoque','',"irPara('estoque')");
   if(!al) al='<div class="vazio">Tudo em dia. Nenhum alerta agora.</div>';
@@ -1911,11 +1919,13 @@ function vInicio(){
     '<h2 class="sec">Precisa de atenção</h2>'+al+
     '<h2 class="sec">Últimos lançamentos</h2>'+listaRecentes;
 }
-function alertaCard(icon,cor,bg,titulo,sub,valor,onclick){
+function alertaCard(icon,cor,bg,titulo,sub,valor,onclick,rotuloValor){
   return '<div class="item" style="cursor:pointer" onclick="'+onclick+'">'+
     '<div class="iconC" style="background:'+bg+';color:'+cor+'">'+icon+'</div>'+
     '<div style="flex:1"><div style="font-size:14.5px;font-weight:600">'+titulo+'</div>'+(sub?'<div style="font-size:12px;color:var(--muted);margin-top:2px">'+sub+'</div>':'')+'</div>'+
-    (valor?'<div class="val2">'+valor+'</div>':'')+'</div>';
+    (valor?'<div style="text-align:right">'+
+      (rotuloValor?'<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">'+rotuloValor+'</div>':'')+
+      '<div class="val2">'+valor+'</div></div>':'')+'</div>';
 }
 function hojeISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 // Monta o horário do lançamento: se for hoje, usa a hora atual; se for
