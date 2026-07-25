@@ -81,6 +81,8 @@
   .toggle button{flex:1;border:none;border-radius:9px;padding:9px 0;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--i);background:transparent;color:var(--muted)}
   .chips{display:flex;gap:8px;flex-wrap:wrap}
   .chip{border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 13px;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;font-family:var(--i)}
+  .sugLinha{font-size:12px;color:var(--muted);margin:2px 0 6px;min-height:16px}
+  .chipSug{background:var(--amberSoft);border:1px solid var(--pineSoft);color:var(--pine);border-radius:8px;padding:3px 10px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--i);margin-left:4px}
   .chipNova{border-style:dashed;color:var(--pine);font-weight:600}
   .chip.on{background:var(--pine);color:#fff;border-color:var(--pine)}
   .primario{width:100%;background:var(--amber);color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--i);margin-top:16px}
@@ -106,6 +108,22 @@
   .vcRot{font-size:11.5px;font-weight:600}
   .vcVal{font-size:17px;font-weight:700;font-family:var(--g);margin-top:2px}
   .vcQtd{font-size:10.5px;color:var(--muted);margin-top:1px}
+  .simpleOi{font-family:var(--g);font-size:19px;font-weight:600;margin-bottom:2px}
+  .evGrafico{display:flex;align-items:flex-end;gap:6px;height:150px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 10px}
+  .evCol{flex:1;display:flex;flex-direction:column;align-items:center;height:100%}
+  .evBarras{flex:1;display:flex;align-items:flex-end;gap:3px;width:100%;justify-content:center}
+  .evB{width:44%;border-radius:4px 4px 0 0;min-height:2px}
+  .evBv{background:var(--emerald)}
+  .evBs{background:var(--rose)}
+  .evRot{font-size:10px;color:var(--muted);margin-top:6px;text-transform:capitalize}
+  .evCol.evAtual .evRot{color:var(--pine);font-weight:700}
+  .evLegenda{display:flex;gap:14px;justify-content:center;font-size:11.5px;color:var(--muted);margin-top:8px}
+  .evLegenda span{display:flex;align-items:center;gap:5px}
+  .evPonto{width:9px;height:9px;border-radius:3px;display:inline-block}
+  .evLinha{display:flex;align-items:center;padding:9px 4px;border-bottom:1px solid var(--line);font-size:12.5px;gap:6px}
+  .evLinha.evCab{color:var(--muted);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+  .evMes{flex:0 0 58px;text-transform:capitalize}
+  .evVal{flex:1;text-align:right;font-family:var(--g)}
   .cmpHero{background:linear-gradient(150deg,var(--pineSoft),var(--pineDark));border-radius:18px;padding:16px 18px;color:#fff;margin-bottom:12px}
   .cmpHeroRot{font-size:12.5px;color:var(--amberGlass)}
   .cmpHeroVal{font-size:30px;font-weight:700;font-family:var(--g);letter-spacing:-.02em;margin-top:2px}
@@ -289,6 +307,7 @@ async function carregarTudo(){
     montarCategorias(res[3]);
     carregarBeneficiarios();
     await carregarPermissoes();
+    await carregarOperadores();
     montarHistorico();
     offline=false; guardarCopia();
   }catch(e){
@@ -592,6 +611,226 @@ function aplicaFiltroMes(lista){
   });
 }
 // ============================================================
+//  VISÃO SIMPLES (para quem usa o app só para acompanhar)
+// ============================================================
+let visaoSimples=false, meuNome='';
+let operadores=[];
+async function carregarOperadores(){
+  const s=Sessao.ler();
+  const meu=((s&&s.email)||'').toLowerCase();
+  try{
+    operadores=await api('operadores?select=*&order=nome.asc')||[];
+    const eu=operadores.filter(function(o){ return String(o.email||'').toLowerCase()===meu; })[0];
+    visaoSimples = eu ? eu.visao_simples===true : false;
+    meuNome = eu&&eu.nome ? eu.nome : '';
+  }catch(e){ visaoSimples=false; }
+  if(souAdmin) visaoSimples=false;   // o administrador nunca fica na visão simples
+}
+
+function vSimples(){
+  const r=resumoVendas();
+  const hoje=new Date();
+  const A=resumoMes(hoje.getFullYear(), hoje.getMonth()+1);
+  const antMes = hoje.getMonth()===0?12:hoje.getMonth();
+  const antAno = hoje.getMonth()===0?hoje.getFullYear()-1:hoje.getFullYear();
+  const B=resumoMes(antAno, antMes);
+  const v=variacao(A.vendas,B.vendas);
+  const abertas=contas.filter(function(c){ return c.tipo==='PAGAR'&&c.status!=='PAGO'; });
+  const totalAberto=abertas.reduce(function(s,c){ return s+c.valor; },0);
+  const proximas=abertas.filter(function(c){ return diasAte(c.venc)<=7; });
+  const totalProx=proximas.reduce(function(s,c){ return s+c.valor; },0);
+  const positivo=A.saldo>=0;
+
+  return '<div class="simpleOi">Olá'+(meuNome?', '+meuNome:'')+'</div>'+
+    '<section class="hero"><div class="brilho"></div>'+
+      '<div class="lbl">Saldo deste mês</div>'+
+      '<div class="val">'+brl(A.saldo)+'</div>'+
+      '<div style="font-size:12.5px;color:#FFD9D5;margin-top:4px;position:relative">'+
+        (positivo?'Entrou mais do que saiu':'Saiu mais do que entrou')+'</div>'+
+    '</section>'+
+
+    '<div class="duo">'+
+      '<div class="mini"><div class="l">Vendas do mês</div><div class="v" style="color:var(--emerald)">'+brl(A.vendas)+'</div>'+
+        '<div style="font-size:11px;color:'+(v.cor||'var(--muted)')+';margin-top:3px">'+v.txt+' vs mês passado</div></div>'+
+      '<div class="mini"><div class="l">Gastos do mês</div><div class="v" style="color:var(--rose)">'+brl(A.sai)+'</div>'+
+        '<div style="font-size:11px;color:var(--muted);margin-top:3px">tudo que saiu</div></div>'+
+    '</div>'+
+
+    '<h2 class="sec">Vendas</h2>'+
+    '<div class="item"><div style="flex:1"><div style="font-size:14px;font-weight:500">Hoje</div></div>'+
+      '<div class="val2" style="color:var(--emerald)">'+brl(r.dia)+'</div></div>'+
+    '<div class="item"><div style="flex:1"><div style="font-size:14px;font-weight:500">Últimos 7 dias</div></div>'+
+      '<div class="val2" style="color:var(--emerald)">'+brl(r.semana)+'</div></div>'+
+
+    '<h2 class="sec">Contas a pagar</h2>'+
+    '<div class="item"><div style="flex:1"><div style="font-size:14px;font-weight:500">Total em aberto</div>'+
+      '<div style="font-size:11.5px;color:var(--muted)">'+abertas.length+' conta(s)</div></div>'+
+      '<div class="val2">'+brl(totalAberto)+'</div></div>'+
+    (proximas.length
+      ? '<div class="item" style="border-color:#F0C4CB;background:#FDECEC"><div style="flex:1">'+
+        '<div style="font-size:14px;font-weight:600;color:var(--rose)">Vence nos próximos 7 dias</div>'+
+        '<div style="font-size:11.5px;color:var(--muted)">'+proximas.length+' conta(s)</div></div>'+
+        '<div class="val2" style="color:var(--rose)">'+brl(totalProx)+'</div></div>'
+      : '<div class="vazio">Nada vencendo nos próximos dias.</div>')+
+
+    '<div class="dica" style="text-align:center;margin-top:16px">Esta é a visão resumida. Para lançar ou ver detalhes, fale com o Marcus.</div>';
+}
+
+// ============================================================
+//  EVOLUÇÃO MENSAL (dashboard)
+// ============================================================
+function seriesMeses(qtd){
+  const hoje=new Date();
+  const lista=[];
+  for(let k=qtd-1;k>=0;k--){
+    const d=new Date(hoje.getFullYear(), hoje.getMonth()-k, 1);
+    const ano=d.getFullYear(), mes=d.getMonth()+1;
+    const R=resumoMes(ano,mes);
+    lista.push({ano:ano,mes:mes,rot:NOMES_MES[mes-1]+'/'+String(ano).slice(2),
+      vendas:R.vendas, ent:R.ent, sai:R.sai, saldo:R.saldo, atual:(k===0)});
+  }
+  return lista;
+}
+function abrirEvolucao(){
+  const meses=seriesMeses(6);
+  const comDados=meses.filter(function(m){ return m.ent>0||m.sai>0; });
+  const maxV=meses.reduce(function(m,x){ return Math.max(m,x.vendas,x.sai); },0);
+
+  // indicadores
+  const mediaVendas = comDados.length?comDados.reduce(function(s,x){ return s+x.vendas; },0)/comDados.length:0;
+  const mediaSaidas = comDados.length?comDados.reduce(function(s,x){ return s+x.sai; },0)/comDados.length:0;
+  const melhor = comDados.slice().sort(function(a,b){ return b.vendas-a.vendas; })[0];
+  const atual = meses[meses.length-1];
+  const anterior = meses[meses.length-2];
+  const vV = anterior?variacao(atual.vendas,anterior.vendas):{txt:'—',cor:'var(--muted)'};
+
+  // margem: quanto sobra de cada real vendido
+  const margem = atual.vendas>0 ? ((atual.vendas-atual.sai)/atual.vendas*100) : null;
+
+  const barras = meses.map(function(m){
+    const hV=maxV?Math.round(m.vendas/maxV*100):0;
+    const hS=maxV?Math.round(m.sai/maxV*100):0;
+    return '<div class="evCol'+(m.atual?' evAtual':'')+'">'+
+      '<div class="evBarras">'+
+        '<div class="evB evBv" style="height:'+hV+'%" title="Vendas"></div>'+
+        '<div class="evB evBs" style="height:'+hS+'%" title="Saídas"></div>'+
+      '</div>'+
+      '<div class="evRot">'+m.rot+'</div></div>';
+  }).join('');
+
+  const tabela = meses.map(function(m){
+    const pos=m.saldo>=0;
+    return '<div class="evLinha"><span class="evMes">'+m.rot+'</span>'+
+      '<span class="evVal" style="color:var(--emerald)">'+brl(m.vendas)+'</span>'+
+      '<span class="evVal" style="color:var(--rose)">'+brl(m.sai)+'</span>'+
+      '<strong class="evVal" style="color:'+(pos?'var(--emerald)':'var(--rose)')+'">'+brl(m.saldo)+'</strong></div>';
+  }).join('');
+
+  abrirFolha('Evolução da farmácia',
+    '<section class="cmpHero">'+
+      '<div class="cmpHeroRot">Saldo de '+atual.rot+'</div>'+
+      '<div class="cmpHeroVal">'+brl(atual.saldo)+'</div>'+
+      '<div class="cmpHeroSub">Vendas '+brl(atual.vendas)+
+        ' <span class="cmpBadge" style="background:'+(vV.pct>=0?'#1E7A55':'#8E1A15')+'">'+vV.txt+'</span></div>'+
+    '</section>'+
+
+    '<h2 class="sec">Últimos 6 meses</h2>'+
+    '<div class="evGrafico">'+barras+'</div>'+
+    '<div class="evLegenda"><span><i class="evPonto evBv"></i>Vendas</span><span><i class="evPonto evBs"></i>Saídas</span></div>'+
+
+    '<div class="evLinha evCab"><span class="evMes">Mês</span><span class="evVal">Vendas</span><span class="evVal">Saídas</span><span class="evVal">Saldo</span></div>'+
+    tabela+
+
+    '<h2 class="sec" style="margin-top:14px">Indicadores</h2>'+
+    '<div class="cmpCard"><div class="cmpCardTopo"><span>Média de vendas por mês</span></div>'+
+      '<div class="cmpCardVal">'+brl(mediaVendas)+'</div>'+
+      '<div class="cmpMini">considerando '+comDados.length+' mês(es) com movimento</div></div>'+
+    '<div class="cmpCard" style="margin-top:8px"><div class="cmpCardTopo"><span>Média de gastos por mês</span></div>'+
+      '<div class="cmpCardVal">'+brl(mediaSaidas)+'</div></div>'+
+    (melhor?'<div class="cmpCard" style="margin-top:8px"><div class="cmpCardTopo"><span>Melhor mês de vendas</span></div>'+
+      '<div class="cmpCardVal">'+melhor.rot+'</div><div class="cmpMini">'+brl(melhor.vendas)+'</div></div>':'')+
+    (margem!==null?'<div class="cmpCard" style="margin-top:8px"><div class="cmpCardTopo"><span>Sobra sobre as vendas ('+atual.rot+')</span>'+
+      '<strong style="color:'+(margem>=0?'var(--emerald)':'var(--rose)')+'">'+margem.toFixed(0)+'%</strong></div>'+
+      '<div class="cmpMini">de cada R$ 100 vendidos, sobram '+brl(margem).replace('R$','')+' depois das saídas</div></div>':'')+
+
+    (comDados.length<2
+      ? '<div class="dica">Com mais meses de uso, este acompanhamento fica mais completo — dá para ver tendência e projetar metas.</div>'
+      : '<div class="dica">Barra verde = vendas, barra vermelha = saídas. O mês atual fica destacado.</div>'));
+}
+// ============================================================
+//  SUGESTÃO DE CATEGORIA
+// ============================================================
+// Palavras que aparecem na descrição e indicam a categoria provável.
+const PISTAS=[
+  ['Distribuidor',       ['distribuidora','distribuidor','panpharma','cimed','medcentro','nazario','nazário','casmed','nds','dsc','dcs','andrade','fribel','martins','pharma','medicamento','laboratorio','laboratório']],
+  ['Compra à vista',     ['a vista','à vista','avista','compra direta']],
+  ['Energia elétrica',   ['energia','equatorial','celpa','luz','eletrica','elétrica']],
+  ['Água',               ['agua','água','saneamento','cosanpa']],
+  ['Internet e telefone',['internet','telefone','celular','fibra','vivo','claro','tim','oi ','wifi']],
+  ['Aluguel',            ['aluguel','locacao','locação','imovel','imóvel']],
+  ['Condomínio / IPTU',  ['condominio','condomínio','iptu']],
+  ['Encargos e FGTS',    ['fgts','inss','encargo','rescisao','rescisão']],
+  ['Comissão',           ['comissao','comissão']],
+  ['Pró-labore',         ['pro-labore','pró-labore','prolabore','retirada socio','retirada sócio']],
+  ['Salário',            ['salario','salário','folha','pagamento funcionario','funcionário','farmaceutico','farmacêutico','atendente','balconista']],
+  ['Vale / Benefício',   ['vale ','vale-','beneficio','benefício','cesta']],
+  ['Contador',           ['contador','contabil','contábil','contabilidade','honorario','honorário']],
+  ['Sistema ERP',        ['erp','sistema','lc sistemas','mensalidade sistema','software','licenca','licença']],
+  ['Taxas bancárias',    ['tarifa','taxa banco','banco','manutencao conta','manutenção conta','ted','doc ']],
+  ['Taxa de cartão',     ['cartao','cartão','maquininha','cielo','rede','stone','getnet','pagseguro']],
+  ['Frete',              ['frete','entrega','transporte','motoboy','correio']],
+  ['Combustível',        ['combustivel','combustível','gasolina','etanol','alcool','álcool','diesel','posto']],
+  ['Manutenção',         ['manutencao','manutenção','conserto','reparo','eletricista','encanador','ar condicionado']],
+  ['Limpeza',            ['limpeza','faxina','higiene','material limpeza']],
+  ['Embalagem',          ['embalagem','sacola','saco','etiqueta','bobina']],
+  ['Marketing',          ['marketing','propaganda','anuncio','anúncio','publicidade','panfleto','impulsionamento']],
+  ['Simples Nacional',   ['simples','das ','imposto','tributo','darf','icms','iss']],
+  ['Alvará e licenças',  ['alvara','alvará','licenca','licença','vigilancia','vigilância','crf','anvisa']],
+  ['Material de escritório',['escritorio','escritório','papelaria','toner','papel']],
+  ['Retirada de sócio',  ['retirada','saque socio','saque sócio']],
+  ['Sangria',            ['sangria']]
+];
+function semAcento(t){
+  return String(t||'').toLowerCase()
+    .replace(/[áàâã]/g,'a').replace(/[éê]/g,'e').replace(/í/g,'i')
+    .replace(/[óôõ]/g,'o').replace(/ú/g,'u').replace(/ç/g,'c');
+}
+// Devolve a categoria provável para uma descrição, ou null
+function sugerirCategoria(descricao,tipo){
+  const t=semAcento(descricao);
+  if(t.length<3) return null;
+  const disponiveis=(CATS[tipo]||[]).concat(CATS.SAIDA||[]);
+  for(let i=0;i<PISTAS.length;i++){
+    const cat=PISTAS[i][0], palavras=PISTAS[i][1];
+    for(let j=0;j<palavras.length;j++){
+      if(t.indexOf(semAcento(palavras[j]))>=0){
+        if(disponiveis.indexOf(cat)>=0) return cat;
+      }
+    }
+  }
+  // se já houve lançamento com descrição parecida, repete a categoria dele
+  const parecido=movimentos.filter(function(m){
+    return m.categoria && m.desc && semAcento(m.desc).indexOf(t)>=0;
+  })[0];
+  return parecido?parecido.categoria:null;
+}
+// Mostra o aviso "sugerido: X" e marca o chip correspondente
+function aplicarSugestao(idDesc,idChips,tipo,callbackEscolha){
+  const campo=document.getElementById(idDesc); if(!campo) return;
+  const cat=sugerirCategoria(campo.value,tipo);
+  const aviso=document.getElementById(idChips+'Sug');
+  if(!aviso) return;
+  if(!cat){ aviso.innerHTML=''; return; }
+  aviso.innerHTML='Sugestão: <button class="chipSug" onclick="'+callbackEscolha+'(\''+cat+'\')">'+cat+'</button>';
+}
+// Ordena as categorias colocando as mais usadas primeiro
+function categoriasOrdenadas(tipo){
+  const uso={};
+  movimentos.forEach(function(m){ if(m.categoria) uso[m.categoria]=(uso[m.categoria]||0)+1; });
+  contas.forEach(function(c){ if(c.categoria) uso[c.categoria]=(uso[c.categoria]||0)+1; });
+  return (CATS[tipo]||[]).slice().sort(function(a,b){ return (uso[b]||0)-(uso[a]||0); });
+}
+// ============================================================
 //  ADMINISTRADOR E PERMISSÕES
 // ============================================================
 let souAdmin=false;
@@ -647,7 +886,29 @@ function abrirAdministracao(){
     linha('pode_excluir','Excluir registros','Apagar lançamentos e contas')+
     linha('pode_pagar','Dar baixa em contas','Marcar boletos como pagos')+
     linha('pode_ver_relatorios','Ver relatórios','Aba de relatórios e comparativos')+
+    '<h2 class="sec" style="margin-top:16px">Usuários</h2>'+
+    (operadores.length?operadores.map(function(o){
+      const ehAdmin=String(o.email).toLowerCase()===String((Sessao.ler()||{}).email||'').toLowerCase()&&souAdmin;
+      return '<div class="item" style="margin-top:8px"><div style="flex:1">'+
+        '<div style="font-size:14px;font-weight:500">'+(o.nome||o.email)+(ehAdmin?' <span class="selo" style="background:var(--pine)">admin</span>':'')+'</div>'+
+        '<div style="font-size:11px;color:var(--muted)">'+o.email+'</div>'+
+        '<div style="font-size:11px;color:var(--muted);margin-top:2px">'+(o.visao_simples?'Visão de acompanhamento':'App completo')+'</div></div>'+
+        (ehAdmin?'':'<button class="chave'+(o.visao_simples?'':' chaveOn')+'" onclick="alternarVisao(\''+o.email+'\')"><span></span></button>')+
+        '</div>';
+    }).join(''):'<div class="vazio">Nenhum usuário cadastrado.</div>')+
+    '<div class="dica">Chave ligada = app completo. Desligada = só acompanhamento (vê os números, não lança).</div>'+
     '<div class="dica">As mudanças valem assim que a pessoa recarregar o aplicativo.</div>');
+}
+async function alternarVisao(email){
+  if(!souAdmin){ alert('Área exclusiva do administrador.'); return; }
+  const o=operadores.filter(function(x){ return x.email===email; })[0]; if(!o) return;
+  const novo=!o.visao_simples;
+  try{
+    await api('operadores?email=eq.'+encodeURIComponent(email),{method:'PATCH',body:JSON.stringify({visao_simples:novo})});
+    o.visao_simples=novo;
+    await registrar(novo?'BLOQUEOU':'LIBEROU','Usuário',(o.nome||email)+' — '+(novo?'visão de acompanhamento':'app completo'),null);
+    fecharFolha(); abrirAdministracao();
+  }catch(e){ alert(e.message); }
 }
 async function alternarPermissao(campo){
   if(!souAdmin){ alert('Área exclusiva do administrador.'); return; }
@@ -852,6 +1113,20 @@ function abrirMenu(){
       '<div class="drIcone">'+icone+'</div>'+
       '<div><div class="drTit">'+titulo+'</div>'+(sub?'<div class="drSub">'+sub+'</div>':'')+'</div></button>';
   };
+  if(visaoSimples){
+    ov.innerHTML='<div class="drawer" id="drawer">'+
+      '<div class="drTopo"><div class="marca"><img src="icone-192.png" alt=""/></div>'+
+        '<div><div class="drNome">Farma Família</div><div class="drEmail">'+((s&&s.email)||'')+'</div>'+
+        '<span class="selo seloOp">Acompanhamento</span></div></div>'+
+      '<div class="drSecao">Ver</div>'+
+      item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
+      '<div class="drSecao">Conta</div>'+
+      item(IC.sair,'Sair do aplicativo','',"sair()")+
+      '<div class="drRodape">Farma Família</div></div>';
+    document.body.appendChild(ov);
+    requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
+    return;
+  }
   ov.innerHTML='<div class="drawer" id="drawer">'+
     '<div class="drTopo"><div class="marca"><img src="icone-192.png" alt=""/></div>'+
       '<div><div class="drNome">Farma Família</div><div class="drEmail">'+((s&&s.email)||'')+'</div>'+
@@ -866,11 +1141,11 @@ function abrirMenu(){
     item(IC.alerta,'Avisos de vencimento',(avisosLigados()?'Ligados':'Desligados'),"pedirPermissaoAviso()")+
 
     (souAdmin?'<div class="drSecao">Administração</div>'+
-      item(IC.sair,'Usuários e permissões','O que Brenda e Naldo podem fazer',"abrirAdministracao()"):'')+
+      item(IC.sair,'Usuários e permissões','Quem pode o quê',"abrirAdministracao()"):'')+
 
-    '<div class="drSecao">Backup e segurança</div>'+
-    item(IC.baixar,'Salvar backup',ultimoBackupTexto(),"baixarBackup()")+
-    item(IC.rel,'Restaurar backup','Recuperar de um arquivo',"abrirRestaurar()")+
+    (souAdmin?'<div class="drSecao">Backup e segurança</div>'+
+      item(IC.baixar,'Salvar backup',ultimoBackupTexto(),"baixarBackup()")+
+      item(IC.rel,'Restaurar backup','Recuperar de um arquivo',"abrirRestaurar()"):'')+
 
     '<div class="drSecao">Conferência</div>'+
     item(IC.relogio,'Histórico de movimentações','Quem lançou, editou ou excluiu',"abrirHistorico()")+
@@ -1371,20 +1646,60 @@ function confirmarRepetido(r){
   return confirm(msg);
 }
 // ---- Identificação do beneficiário pelo código de barras ----
-// O nome da distribuidora não vem no código. O que vem é banco + conta.
-// Guardamos essa relação para reconhecer sozinho nos próximos boletos.
-let beneficiarios={};   // chave -> nome
+// O nome da distribuidora NÃO vem no código de barras. O que vem é banco +
+// campo livre, e dentro do campo livre estão a agência/conta do beneficiário.
+// O problema: cada banco (e cada carteira) põe esses dados numa posição
+// diferente. Em vez de tentar adivinhar o layout, guardamos o código inteiro
+// e comparamos POSIÇÃO POR POSIÇÃO com os já conhecidos: os dígitos da conta
+// são iguais entre boletos da mesma empresa, onde quer que estejam.
+let beneficiarios=[];   // [{chave,nome,codigo_barras,banco,vezes}]
+
 function campoLivreDe(cb){
   const d=String(cb).replace(/\D/g,'');
   return d.length===44 ? d.slice(19,44) : null;
 }
+function bancoDe(cb){
+  const d=String(cb).replace(/\D/g,'');
+  return d.length===44 ? d.slice(0,3) : null;
+}
+// chave grosseira: banco + começo do campo livre (carteira/convênio costuma ser estável)
 function chaveBeneficiario(cb){
   const d=String(cb).replace(/\D/g,'');
   const cl=campoLivreDe(d);
   if(!cl) return null;
-  return d.slice(0,3)+'-'+cl.slice(-12);   // banco + parte estável (agência/conta)
+  return d.slice(0,3)+'-'+cl.slice(0,6);
 }
-// "Nosso número" — layout conhecido do Itaú (banco 341)
+// quantas posições do campo livre coincidem entre dois códigos
+function semelhanca(cbA,cbB){
+  const a=campoLivreDe(cbA), b=campoLivreDe(cbB);
+  if(!a||!b) return 0;
+  let iguais=0;
+  for(let i=0;i<25;i++) if(a[i]===b[i]) iguais++;
+  return iguais;
+}
+// Procura a empresa mais parecida. Exige banco igual e semelhança alta,
+// para não sugerir o fornecedor errado.
+const MIN_SEMELHANCA=13;      // de 25 posições do campo livre
+function reconhecerBeneficiario(cb){
+  const banco=bancoDe(cb);
+  if(!banco) return null;
+  let melhor=null, melhorPonto=0, segundoPonto=0;
+  for(let i=0;i<beneficiarios.length;i++){
+    const b=beneficiarios[i];
+    if(b.banco && b.banco!==banco) continue;
+    let ponto=0;
+    if(b.codigo_barras){
+      ponto=semelhanca(cb,b.codigo_barras);
+    }else if(b.chave && b.chave===chaveBeneficiario(cb)){
+      ponto=MIN_SEMELHANCA;   // compatibilidade com o que foi aprendido antes
+    }
+    if(ponto>melhorPonto){ segundoPonto=melhorPonto; melhorPonto=ponto; melhor=b; }
+    else if(ponto>segundoPonto){ segundoPonto=ponto; }
+  }
+  if(melhor && melhorPonto>=MIN_SEMELHANCA) return {nome:melhor.nome, forca:melhorPonto};
+  return null;
+}
+// "Nosso número" — extração aproximada, só para exibir/registrar
 function documentoDe(cb){
   const d=String(cb).replace(/\D/g,'');
   const cl=campoLivreDe(d);
@@ -1393,24 +1708,26 @@ function documentoDe(cb){
   return cl.slice(0,11);
 }
 async function carregarBeneficiarios(){
+  try{ beneficiarios=await api('beneficiarios?select=*')||[]; }
+  catch(e){ beneficiarios=[]; }
+}
+// Guarda o código lido junto do nome informado. Se já houver um registro
+// muito parecido com o mesmo nome, apenas conta mais uma ocorrência.
+async function aprenderBeneficiario(cb,nome){
+  if(!cb||!nome) return;
+  const banco=bancoDe(cb);
+  const jaTem=beneficiarios.filter(function(b){
+    return b.nome===nome && b.codigo_barras && semelhanca(cb,b.codigo_barras)>=24;
+  })[0];
+  if(jaTem) return;
   try{
-    const lista=await api('beneficiarios?select=*');
-    beneficiarios={};
-    (lista||[]).forEach(function(b){ beneficiarios[b.chave]=b.nome; });
+    await api('beneficiarios',{method:'POST',body:JSON.stringify({
+      chave:chaveBeneficiario(cb), nome:nome, codigo_barras:cb, banco:banco
+    })});
+    await carregarBeneficiarios();
   }catch(e){}
 }
-// Guarda o nome informado, ligado à conta do beneficiário
-async function aprenderBeneficiario(chave,nome){
-  if(!chave||!nome) return;
-  if(beneficiarios[chave]===nome) return;
-  beneficiarios[chave]=nome;
-  try{
-    await api('beneficiarios',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=representation'},
-      body:JSON.stringify({chave:chave,nome:nome})});
-  }catch(e){
-    try{ await api('beneficiarios?chave=eq.'+encodeURIComponent(chave),{method:'PATCH',body:JSON.stringify({nome:nome})}); }catch(e2){}
-  }
-}
+
 // ---- Vencimento do boleto (fator de vencimento FEBRABAN) ----
 // O contador de 4 dígitos chegou a 9999 em 21/02/2025 e recomeçou em 1000
 // no dia 22/02/2025. Por isso o mesmo fator pode significar duas datas:
@@ -1545,9 +1862,11 @@ function irPara(id){ aba=id; render(); }
 function render(){
   const h=document.getElementById('hoje'); if(!h) return;
   h.textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});
-  document.getElementById('nav').innerHTML=abas.map(function(a){ return '<button class="'+(aba===a.id?'on':'')+'" onclick="irPara(\''+a.id+'\')"><span class="ponto"></span>'+a.i+'<span class="txt">'+a.n+'</span></button>'; }).join('');
+  const abasVis = visaoSimples ? abas.filter(function(a){ return a.id==='inicio'; }) : abas;
+  document.getElementById('nav').innerHTML=abasVis.map(function(a){ return '<button class="'+(aba===a.id?'on':'')+'" onclick="irPara(\''+a.id+'\')"><span class="ponto"></span>'+a.i+'<span class="txt">'+a.n+'</span></button>'; }).join('');
   const m=document.getElementById('main');
   const av = offline?'<div class="aviso">Sem conexão — mostrando os últimos dados carregados. Para lançar, é preciso internet.</div>':'';
+  if(visaoSimples){ m.innerHTML=av+vSimples(); document.getElementById('fab').style.display='none'; return; }
   if(aba==='inicio')m.innerHTML=av+vInicio();
   else if(aba==='caixa')m.innerHTML=av+vCaixa();
   else if(aba==='estoque')m.innerHTML=av+vEstoque();
@@ -1639,9 +1958,10 @@ async function novaCategoria(tipo,alvo){
   else if(alvo==='grupo'){ aplicarCategoriaGrupo(nome); }
   else if(alvo==='gerenciar'){ try{ const l=await api('categorias?select=*&order=nome.asc'); montarCategorias(l); }catch(e){} fecharFolha(); abrirGerenciarCategorias(); }
 }
+function escolherDespCat(c){ despCat=c; redesenharCatsDespesa(); }
 function redesenharCatsDespesa(){
   const el=document.getElementById('dCats'); if(!el) return;
-  el.innerHTML=CATS.DESPESA.map(function(c){
+  el.innerHTML=categoriasOrdenadas('DESPESA').map(function(c){
     return '<button class="chip '+(c===despCat?'on':'')+'" onclick="despCat=\''+c+'\';redesenharCatsDespesa()">'+c+'</button>';
   }).join('')+'<button class="chip chipNova" onclick="novaCategoria(\'DESPESA\',\'desp\')">+ nova</button>';
 }
@@ -1691,7 +2011,7 @@ function setEditTipo(t,catInicial){
   const tg=document.getElementById('edToggle');
   tg.children[0].style.background=t==='ENTRADA'?'var(--emerald)':'transparent'; tg.children[0].style.color=t==='ENTRADA'?'#fff':'var(--muted)';
   tg.children[1].style.background=t==='SAIDA'?'var(--rose)':'transparent'; tg.children[1].style.color=t==='SAIDA'?'#fff':'var(--muted)';
-  document.getElementById('eCats').innerHTML=CATS[t].map(function(c){ return '<button class="chip '+(c===editCat?'on':'')+'" onclick="editCat=\''+c+'\';setEditTipo(editTipo,\''+c+'\')">'+c+'</button>'; }).join('')+'<button class="chip chipNova" onclick="novaCategoria(\''+t+'\',\'edit\')">+ nova</button>';
+  document.getElementById('eCats').innerHTML=categoriasOrdenadas(t).map(function(c){ return '<button class="chip '+(c===editCat?'on':'')+'" onclick="editCat=\''+c+'\';setEditTipo(editTipo,\''+c+'\')">'+c+'</button>'; }).join('')+'<button class="chip chipNova" onclick="novaCategoria(\''+t+'\',\'edit\')">+ nova</button>';
 }
 async function salvarEdicao(id){
   const v=parseValor(document.getElementById('ev').value); if(!v||isNaN(v))return;
@@ -1778,17 +2098,18 @@ function abrirMov(){
     '<label class="campo">Valor</label><input id="mv" inputmode="numeric" placeholder="0,00" oninput="mascaraMoeda(this);previa(\'mv\',\'mPrev\')"/>'+
     '<div id="mPrev" class="previa"></div>'+
     '<label class="campo">Categoria</label><div class="chips" id="mCats"></div>'+
-    '<label class="campo">Descrição / natureza do gasto</label><input id="md" list="sugMov" placeholder="Ex: Pagamento Itafarma, retirada Bia"/>'+listaSugestoes('sugMov')+
+    '<label class="campo">Descrição / natureza do gasto</label><input id="md" list="sugMov" oninput="aplicarSugestao(\'md\',\'mCats\',movTipo,\'escolherMovCat\')" placeholder="Ex: Energia, frete, salário"/>'+listaSugestoes('sugMov')+'<div id="mCatsSug" class="sugLinha"></div>'+
     '<label class="campo">Data</label><input id="mdata" type="date" value="'+hojeISO()+'"/>'+
     '<button class="primario" id="mBtn">Salvar lançamento</button>',
     function(){ setMovTipo('ENTRADA'); document.getElementById('mv').focus(); document.getElementById('mBtn').onclick=salvarMov; });
 }
+function escolherMovCat(c){ movCat=c; setMovTipo(movTipo); }
 function setMovTipo(t){
   movTipo=t;movCat=CATS[t][0];
   const tg=document.getElementById('movToggle');
   tg.children[0].style.background=t==='ENTRADA'?'var(--emerald)':'transparent';tg.children[0].style.color=t==='ENTRADA'?'#fff':'var(--muted)';
   tg.children[1].style.background=t==='SAIDA'?'var(--rose)':'transparent';tg.children[1].style.color=t==='SAIDA'?'#fff':'var(--muted)';
-  document.getElementById('mCats').innerHTML=CATS[t].map(function(c){ return '<button class="chip '+(c===movCat?'on':'')+'" onclick="movCat=\''+c+'\';setMovTipo(movTipo)">'+c+'</button>'; }).join('')+'<button class="chip chipNova" onclick="novaCategoria(\''+t+'\',\'mov\')">+ nova</button>';
+  document.getElementById('mCats').innerHTML=categoriasOrdenadas(t).map(function(c){ return '<button class="chip '+(c===movCat?'on':'')+'" onclick="movCat=\''+c+'\';setMovTipo(movTipo)">'+c+'</button>'; }).join('')+'<button class="chip chipNova" onclick="novaCategoria(\''+t+'\',\'mov\')">+ nova</button>';
 }
 async function salvarMov(){
   const v=parseValor(document.getElementById('mv').value);if(!v)return;
@@ -2002,8 +2323,8 @@ function abrirConta(){
      '<label class="fotoAlt"><span>ou enviar uma foto do boleto</span><input type="file" accept="image/*" capture="environment" onchange="fotoBoleto(event)" style="display:none"/></label>'+
      '<div id="cFoto" class="dica" style="margin:8px 0 2px"></div>':'')+
     '<label class="campo">'+(boleto?'Distribuidor':despesa?'Descrição da despesa':'Cliente / descrição')+'</label>'+
-    '<input id="cd" list="sugConta" placeholder="'+(boleto?'Ex: Itafarma':despesa?'Ex: Frete da entrega':'Ex: Convênio X')+'"/>'+listaSugestoes('sugConta')+
-    (despesa?'<label class="campo">Categoria</label><div class="chips" id="dCats"></div>':'')+
+    '<input id="cd" list="sugConta" oninput="aplicarSugestao(\'cd\',\'dCats\',\'DESPESA\',\'escolherDespCat\')" placeholder="'+(boleto?'Ex: Itafarma':despesa?'Ex: Frete da entrega':'Ex: Convênio X')+'"/>'+listaSugestoes('sugConta')+
+    (despesa?'<label class="campo">Categoria</label><div id="dCatsSug" class="sugLinha"></div><div class="chips" id="dCats"></div>':'')+
     (boleto?'<label class="campo">Linha digitável (opcional — preenche valor e vencimento)</label><input id="cl" inputmode="numeric" oninput="autoLinha()" placeholder="Números do boleto"/>':'')+
     '<label class="campo">Valor</label><input id="cv" inputmode="numeric" placeholder="0,00" oninput="mascaraMoeda(this);previa(\'cv\',\'cPrev\')"/><div id="cPrev" class="previa"></div>'+
     '<label class="campo">'+(despesa?'Data / vencimento':'Vencimento')+'</label><input id="cvenc" type="date" value="'+(despesa?hojeISO():'')+'"/>'+
@@ -2045,7 +2366,7 @@ async function salvarConta(continuar){
     })});
     await registrar('CRIOU', boleto?'Boleto':despesa?'Despesa':'A receber', descricao, v);
     if(boleto && ultimoCodigoLido){
-      await aprenderBeneficiario(chaveBeneficiario(ultimoCodigoLido), document.getElementById('cd').value.trim());
+      await aprenderBeneficiario(ultimoCodigoLido, document.getElementById('cd').value.trim());
     }
     ultimoCodigoLido=null;
     fecharFolha(); await recarregar();
@@ -2174,10 +2495,9 @@ function aplicarLeitura(r,digitos){
   if(cb){
     const doc=documentoDe(cb);
     if(doc) extra+=' · nº '+doc;
-    const chave=chaveBeneficiario(cb);
-    const nome=chave?beneficiarios[chave]:null;
+    const r2=reconhecerBeneficiario(cb);
     const cd=document.getElementById('cd');
-    if(nome && cd && !cd.value){ cd.value=nome; extra+=' · '+nome; }
+    if(r2 && cd && !cd.value){ cd.value=r2.nome; extra+=' · '+r2.nome; }
   }
   const aviso=document.getElementById('cFoto');
   if(aviso){
@@ -2299,7 +2619,7 @@ async function salvarConta(continuar){
     })});
     await registrar('CRIOU', boleto?'Boleto':despesa?'Despesa':'A receber', descricao, v);
     if(boleto && ultimoCodigoLido){
-      await aprenderBeneficiario(chaveBeneficiario(ultimoCodigoLido), document.getElementById('cd').value.trim());
+      await aprenderBeneficiario(ultimoCodigoLido, document.getElementById('cd').value.trim());
     }
     ultimoCodigoLido=null;
     fecharFolha(); await recarregar();
@@ -2427,6 +2747,7 @@ function vRel(){
     blocoCategorias('Saídas por categoria','SAIDA',iv,'var(--rose)')+
     blocoCategorias('Entradas por categoria','ENTRADA',iv,'var(--emerald)')+
     '<button class="btnS" style="width:100%;margin-top:6px" onclick="exportarCsv()">'+IC.baixar+' Exportar em CSV (Excel)</button>'+
+    '<button class="btnS" style="width:100%;margin-top:8px" onclick="abrirEvolucao()">Evolução da farmácia (6 meses)</button>'+
     '<button class="btnS" style="width:100%;margin-top:8px" onclick="abrirComparativo()">Comparar com o mês anterior</button>';
   }
   return '<div class="chips">'+per.map(function(p){ return '<button class="chip '+(relPeriodo===p[0]?'on':'')+'" onclick="relPeriodo=\''+p[0]+'\';render()">'+p[1]+'</button>'; }).join('')+'</div>'+
