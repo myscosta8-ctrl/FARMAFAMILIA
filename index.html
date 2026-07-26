@@ -482,7 +482,7 @@ function resultadosBusca(){
       if(buscaTipo==='ENTRADA'&&m.tipo!=='ENTRADA') return;
       if(combina((m.desc||'')+' '+(m.categoria||''), m.valor, m.ts))
         itens.push({tipo:'mov', id:m.id, ts:m.ts, titulo:m.desc||m.categoria||'Lançamento',
-                    sub:(m.categoria||'')+' · '+dm(new Date(m.ts).toISOString().slice(0,10)),
+                    sub:(m.categoria||'')+' · '+dm(dataLocal(m.ts)),
                     valor:m.valor, entrada:m.tipo==='ENTRADA'});
     });
   }
@@ -529,10 +529,10 @@ function conferirDuplicados(){
       const a=movimentos[i], b=movimentos[j];
       if(a.tipo!==b.tipo) continue;
       if(Math.abs(a.valor-b.valor)>=0.005) continue;
-      if(new Date(a.ts).toISOString().slice(0,10)!==new Date(b.ts).toISOString().slice(0,10)) continue;
+      if(dataLocal(a.ts)!==dataLocal(b.ts)) continue;
       if(!textoIgual(a.desc,b.desc)) continue;
-      achados.push({a:{desc:a.desc,valor:a.valor,venc:new Date(a.ts).toISOString().slice(0,10)},
-                    b:{desc:b.desc,valor:b.valor,venc:new Date(b.ts).toISOString().slice(0,10)},
+      achados.push({a:{desc:a.desc,valor:a.valor,venc:dataLocal(a.ts)},
+                    b:{desc:b.desc,valor:b.valor,venc:dataLocal(b.ts)},
                     motivo:'mesmo dia, valor e descrição', tipo:'Lançamento', idB:b.id});
     }
   }
@@ -1627,7 +1627,7 @@ function movimentoRepetido(d){
   const dia=String(d.data).slice(0,10);
   for(let i=0;i<movimentos.length;i++){
     const m=movimentos[i];
-    const diaM=new Date(m.ts).toISOString().slice(0,10);
+    const diaM=dataLocal(m.ts);
     if(m.tipo===d.tipo && Math.abs(m.valor-d.valor)<0.005 && diaM===dia && textoIgual(m.desc,d.descricao))
       return m;
   }
@@ -1903,7 +1903,7 @@ function vInicio(){
         return '<div class="item"'+(ed?' style="cursor:pointer" onclick="abrirEditar(\''+m.id+'\')"':'')+'>'+
           '<div class="iconC" style="background:'+(e?'#E7F6EF':'#FDECEC')+';color:'+(e?'var(--emerald)':'var(--rose)')+'">'+(e?IC.up:IC.down)+'</div>'+
           '<div style="flex:1"><div style="font-size:14px;font-weight:500">'+(m.desc||m.categoria||'Lançamento')+'</div>'+
-          '<div style="font-size:11.5px;color:var(--muted)">'+dm(new Date(m.ts).toISOString().slice(0,10))+' · '+(m.categoria||'')+'</div></div>'+
+          '<div style="font-size:11.5px;color:var(--muted)">'+dm(dataLocal(m.ts))+' · '+(m.categoria||'')+'</div></div>'+
           '<div style="text-align:right"><div class="val2" style="color:'+(e?'var(--emerald)':'var(--rose)')+'">'+(e?'+':'−')+' '+brl(m.valor)+'</div>'+
           (ed?'<div style="font-size:10.5px;color:var(--muted);margin-top:2px">toque para corrigir</div>':'')+'</div></div>';
       }).join('')
@@ -1927,7 +1927,14 @@ function alertaCard(icon,cor,bg,titulo,sub,valor,onclick,rotuloValor){
       (rotuloValor?'<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">'+rotuloValor+'</div>':'')+
       '<div class="val2">'+valor+'</div></div>':'')+'</div>';
 }
-function hojeISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function hojeISO(){ return dataLocal(Date.now()); }
+// Converte qualquer instante (timestamp) na data do calendário LOCAL.
+// Nunca usar toISOString().slice(0,10) para isso: toISOString() é UTC e,
+// à noite no Brasil (UTC-3), empurra a data para o dia seguinte.
+function dataLocal(ts){
+  const d=new Date(ts);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
 // Monta o horário do lançamento: se for hoje, usa a hora atual; se for
 // retroativo, usa meio-dia daquele dia.
 function montarDataHora(dataISO){
@@ -2739,7 +2746,7 @@ function verCategoria(catEnc,tipo){
     itens.map(function(m){
       return '<div class="item" style="margin-top:8px"><div style="flex:1">'+
         '<div style="font-size:14px;font-weight:500">'+(m.desc||cat)+'</div>'+
-        '<div style="font-size:11.5px;color:var(--muted)">'+dm(new Date(m.ts).toISOString().slice(0,10))+'</div></div>'+
+        '<div style="font-size:11.5px;color:var(--muted)">'+dm(dataLocal(m.ts))+'</div></div>'+
         '<div class="val2">'+brl(m.valor)+'</div></div>';
     }).join(''));
 }
