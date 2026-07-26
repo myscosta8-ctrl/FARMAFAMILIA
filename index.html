@@ -124,6 +124,11 @@
   .evLinha.evCab{color:var(--muted);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.03em}
   .evMes{flex:0 0 58px;text-transform:capitalize}
   .evVal{flex:1;text-align:right;font-family:var(--g)}
+  .acCompara{display:flex;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 10px;margin-top:10px}
+  .acLado{flex:1;text-align:center}
+  .acRot{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.02em;padding:0 4px}
+  .acVal{font-family:var(--g);font-size:19px;font-weight:700;margin-top:5px}
+  .acSeparador{width:1px;align-self:stretch;background:var(--line);margin:0 4px}
   .cmpHero{background:linear-gradient(150deg,var(--pineSoft),var(--pineDark));border-radius:18px;padding:16px 18px;color:#fff;margin-bottom:12px}
   .cmpHeroRot{font-size:12.5px;color:var(--amberGlass)}
   .cmpHeroVal{font-size:30px;font-weight:700;font-family:var(--g);letter-spacing:-.02em;margin-top:2px}
@@ -691,6 +696,17 @@ function seriesMeses(qtd){
   }
   return lista;
 }
+// Soma todo o histórico já lançado, desde o primeiro movimento.
+function saldoAcumuladoTotal(){
+  let ent=0, sai=0, primeiro=null, saldoInicial=0;
+  movimentos.forEach(function(m){
+    if(m.tipo==='ENTRADA') ent+=m.valor; else sai+=m.valor;
+    if(m.categoria==='Saldo Inicial') saldoInicial+=m.valor;
+    if(primeiro===null || m.ts<primeiro) primeiro=m.ts;
+  });
+  return {ent:ent, sai:sai, saldo:ent-sai, desde:primeiro, saldoInicial:saldoInicial};
+}
+
 function abrirEvolucao(){
   const meses=seriesMeses(6);
   const comDados=meses.filter(function(m){ return m.ent>0||m.sai>0; });
@@ -733,6 +749,39 @@ function abrirEvolucao(){
       '<div class="cmpHeroSub">Vendas '+brl(atual.vendas)+
         ' <span class="cmpBadge" style="background:'+(vV.pct>=0?'#1E7A55':'#8E1A15')+'">'+vV.txt+'</span></div>'+
     '</section>'+
+
+    (function(){
+      const T=saldoAcumuladoTotal();
+      if(!T.desde) return '';
+      const contrib = T.saldo!==0 ? (atual.saldo/T.saldo*100) : null;
+      const mesTotalPositivo = atual.saldo>=0;
+      const geralPositivo = T.saldo>=0;
+      const desdeTxt = new Date(T.desde).toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+      return '<div class="acCompara">'+
+        '<div class="acLado">'+
+          '<div class="acRot">Acumulado desde '+desdeTxt+'</div>'+
+          '<div class="acVal" style="color:'+(geralPositivo?'var(--emerald)':'var(--rose)')+'">'+brl(T.saldo)+'</div>'+
+        '</div>'+
+        '<div class="acSeparador"></div>'+
+        '<div class="acLado">'+
+          '<div class="acRot">Só '+atual.rot+'</div>'+
+          '<div class="acVal" style="color:'+(mesTotalPositivo?'var(--emerald)':'var(--rose)')+'">'+brl(atual.saldo)+'</div>'+
+        '</div>'+
+      '</div>'+
+      (contrib!==null
+        ? '<div class="dica" style="text-align:center;margin-top:6px">'+
+            (Math.abs(contrib)<=100
+              ? 'Este mês representa '+Math.abs(contrib).toFixed(0)+'% do saldo acumulado'
+              : (contrib>0
+                  ? 'Este mês sozinho é maior que todo o acumulado — os meses anteriores estavam no negativo'
+                  : 'Este mês está puxando o acumulado para baixo'))+
+          '</div>'
+        : '')+
+      (T.saldoInicial
+        ? '<div class="dica" style="text-align:center;margin-top:2px">Inclui '+brl(T.saldoInicial)+' de saldo inicial de caixa</div>'
+        : '')
+      ;
+    })()+
 
     '<h2 class="sec">Últimos 6 meses</h2>'+
     '<div class="evGrafico">'+barras+'</div>'+
@@ -1522,10 +1571,17 @@ function avisarVencimentos(forcar){
 function limitesMes(ano,mes){                 // mes: 1-12
   return [new Date(ano,mes-1,1).getTime(), new Date(ano,mes,1).getTime()];
 }
+// Categorias que representam ponto de partida, não movimento do mês.
+// Entram no saldo acumulado total, mas ficam fora do desempenho mensal.
+const CATS_FORA_DO_MES=['Saldo Inicial'];
 function resumoMes(ano,mes){
   const iv=limitesMes(ano,mes);
-  const ent=somaMov('ENTRADA',iv[0],iv[1]);
-  const sai=somaMov('SAIDA',iv[0],iv[1]);
+  let ent=0, sai=0;
+  movimentos.forEach(function(m){
+    if(m.ts<iv[0]||m.ts>=iv[1]) return;
+    if(CATS_FORA_DO_MES.indexOf(m.categoria)>=0) return;   // saldo inicial não é "resultado do mês"
+    if(m.tipo==='ENTRADA') ent+=m.valor; else sai+=m.valor;
+  });
   const vendas=somaMov('ENTRADA',iv[0],iv[1],'Venda');
   const cats={};
   movimentos.forEach(function(m){
