@@ -308,7 +308,7 @@ async function carregarTudo(){
     ]);
     movimentos = (res[0]||[]).map(function(x){ return {id:x.id, ts:new Date(x.data_hora).getTime(), tipo:x.tipo, categoria:x.categoria, valor:Number(x.valor), desc:x.descricao, contaId:x.conta_id||null, criadoEm:x.criado_em?new Date(x.criado_em).getTime():null}; });
     produtos   = (res[1]||[]).map(function(x){ return {id:x.id, desc:x.descricao, codigo:x.codigo_barras||'', estoque:Number(x.estoque), minimo:Number(x.estoque_minimo), validade:x.validade}; });
-    contas     = (res[2]||[]).map(function(x){ return {id:x.id, tipo:x.tipo, origem:x.origem||'MANUAL', categoria:x.categoria||'', desc:x.descricao, valor:Number(x.valor), venc:x.vencimento, status:x.status, linha:x.linha_digitavel||'', documento:x.documento||''}; });
+    contas     = (res[2]||[]).map(function(x){ return {id:x.id, tipo:x.tipo, origem:x.origem||'MANUAL', categoria:x.categoria||'', desc:x.descricao, valor:Number(x.valor), venc:x.vencimento, status:x.status, linha:x.linha_digitavel||'', documento:x.documento||'', dataBaixa:x.data_baixa||null}; });
     montarCategorias(res[3]);
     carregarBeneficiarios();
     await carregarPermissoes();
@@ -438,7 +438,23 @@ function filtroAba(a){
   if(a==='DESPESA') return function(c){ return c.tipo==='PAGAR' && c.origem!=='BOLETO'; };
   return function(c){ return c.tipo==='PAGAR'; };   // 'PAGAR' = todas as contas a pagar
 }
-function contasOrd(aba){ return contas.filter(filtroAba(aba)).sort(function(a,b){ return new Date(a.venc)-new Date(b.venc); }); }
+function contasOrd(aba){
+  const lista = contas.filter(filtroAba(aba));
+  if(aba==='DESPESA'){
+    // pendentes primeiro (vencimento mais próximo no topo, pedem ação);
+    // pagas depois, ordenadas pela data em que o pagamento aconteceu —
+    // é essa data que interessa numa despesa já quitada, não o vencimento.
+    return lista.sort(function(a,b){
+      const pa=a.status!=='PAGO', pb=b.status!=='PAGO';
+      if(pa!==pb) return pa?-1:1;
+      if(pa) return new Date(a.venc)-new Date(b.venc);
+      const da=a.dataBaixa?new Date(a.dataBaixa).getTime():new Date(a.venc).getTime();
+      const db=b.dataBaixa?new Date(b.dataBaixa).getTime():new Date(b.venc).getTime();
+      return db-da;
+    });
+  }
+  return lista.sort(function(a,b){ return new Date(a.venc)-new Date(b.venc); });
+}
 function alertas(){
   const baixo=produtos.filter(function(p){ return Number(p.minimo||0)>0&&estoqueDe(p)<Number(p.minimo); }).length;
   const venc=produtos.filter(function(p){ return p.validade&&diasAte(p.validade)<0&&estoqueDe(p)>0; }).length;
@@ -2325,7 +2341,8 @@ function vContas(){
   const itens = visiveis.length
     ? visiveis.map(function(c){
         const dias=diasAte(c.venc);
-        const st = c.status==='PAGO' ? {t:(contaAba==='RECEBER'?'Recebido':'Pago'),c:'var(--emerald)',bg:'#E7F6EF'}
+        const st = c.status==='PAGO'
+          ? {t:(contaAba==='RECEBER'?'Recebido':'Pago')+(contaAba==='DESPESA'?' '+dm(c.dataBaixa||c.venc):''), c:'var(--emerald)',bg:'#E7F6EF'}
           : dias<0  ? {t:'Atrasado',c:'var(--rose)',bg:'#FDECEC'}
           : dias===0? {t:'Vence hoje',c:'var(--rose)',bg:'#FDECEC'}
           : dias<=3 ? {t:'Vence em '+dias+'d',c:'#8A5A00',bg:'#FDF1DC'}
