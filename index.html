@@ -765,6 +765,72 @@ function cartaoSaldoAcumulado(atualPronto){
       : '');
 }
 
+// ============================================================
+//  PROJEÇÃO DO MÊS (matemática simples, sem IA — grátis e conferível)
+// ============================================================
+// Ritmo de venda: quanto já vendeu dividido pelos dias já "trabalhados",
+// multiplicado pelos dias do mês inteiro. É a projeção mais simples e
+// mais fácil de auditar — não tenta adivinhar padrão de fim de semana
+// nem sazonalidade, só estica a média observada até aqui.
+function projecaoMes(){
+  const hoje=new Date();
+  const ano=hoje.getFullYear(), mes=hoje.getMonth()+1;
+  const R=resumoMes(ano,mes);
+  const diasTotal=diasNoMes(ano,mes);
+  const diasDecorridos=hoje.getDate();
+  const temVendaHoje = movimentos.some(function(m){ return m.tipo==='ENTRADA'&&m.categoria==='Venda'&&dataLocal(m.ts)===hojeISO(); });
+  // se a venda de hoje ainda não foi lançada, não conta hoje na média
+  // (senão o "dia zerado" puxa a projeção pra baixo sem motivo)
+  const diasBase=Math.max(1, temVendaHoje?diasDecorridos:diasDecorridos-1);
+  const confiavel = diasBase>=4;   // com poucos dias, a projeção oscila demais pra confiar
+
+  const vendaProjetada = (R.vendas/diasBase)*diasTotal;
+  const comp=comprometidoMes();   // saída já lançada + contas que ainda vão vencer no mês
+  const saldoProjetado = vendaProjetada - comp.total;
+
+  // média dos últimos 3 meses fechados, pra comparar se o ritmo está melhor ou pior
+  const hist=[];
+  for(let k=1;k<=3;k++){
+    const d=new Date(ano,mes-1-k,1);
+    const Rm=resumoMes(d.getFullYear(), d.getMonth()+1);
+    if(Rm.vendas>0) hist.push(Rm.vendas);
+  }
+  const mediaHist = hist.length? hist.reduce(function(s,x){ return s+x; },0)/hist.length : null;
+
+  return {ano:ano, mes:mes, diasTotal:diasTotal, diasBase:diasBase, confiavel:confiavel,
+          vendaAteAgora:R.vendas, vendaProjetada:vendaProjetada,
+          comp:comp, saldoProjetado:saldoProjetado, mediaHist:mediaHist};
+}
+
+function blocoProjecao(){
+  const p=projecaoMes();
+  if(!p.confiavel){
+    return '<h2 class="sec">Projeção do mês</h2>'+
+      '<div class="vazio">Ainda cedo no mês ('+p.diasBase+' dia(s) de venda lançada) — a projeção fica confiável a partir do 4º dia.</div>';
+  }
+  const vComp = p.mediaHist ? variacao(p.vendaProjetada,p.mediaHist) : null;
+  const positivo = p.saldoProjetado>=0;
+  const pctTeto = metaTeto ? Math.round(p.comp.total/metaTeto*100) : null;
+
+  return '<h2 class="sec">Projeção do mês (com base nos '+p.diasBase+' dia(s) já lançados)</h2>'+
+    '<section class="cmpHero">'+
+      '<div class="cmpHeroRot">Vendas — no ritmo atual, deve fechar em</div>'+
+      '<div class="cmpHeroVal">'+brl(p.vendaProjetada)+'</div>'+
+      '<div class="cmpHeroSub">Já vendido: '+brl(p.vendaAteAgora)+
+        (vComp?' <span class="cmpBadge" style="background:'+(vComp.pct>=0?'#1E7A55':'#8E1A15')+'">'+vComp.txt+' vs média</span>':'')+
+      '</div>'+
+    '</section>'+
+    '<div class="cmpCard" style="margin-top:9px">'+
+      '<div class="cmpCardTopo"><span>Saldo projetado do mês</span><strong style="color:'+(positivo?'var(--emerald)':'var(--rose)')+'">'+brl(p.saldoProjetado)+'</strong></div>'+
+      '<div class="cmpMini">vendas projetadas ('+brl(p.vendaProjetada)+') menos o que já saiu e o que ainda vai vencer ('+brl(p.comp.total)+')</div>'+
+    '</div>'+
+    (metaTeto ? '<div class="cmpCard" style="margin-top:8px">'+
+        '<div class="cmpCardTopo"><span>Frente ao teto de gastos</span><strong style="color:'+(pctTeto<100?'var(--emerald)':'var(--rose)')+'">'+pctTeto+'%</strong></div>'+
+        '<div class="cmpMini">'+brl(p.comp.total)+' comprometidos de '+brl(metaTeto)+'</div>'+
+      '</div>' : '')+
+    '<div class="dica">Projeção simples: estica a média de venda por dia até o fim do mês. Não considera fim de semana nem sazonalidade — é só um ritmo, não uma promessa.</div>';
+}
+
 function abrirEvolucao(){
   const meses=seriesMeses(6);
   const comDados=meses.filter(function(m){ return m.ent>0||m.sai>0; });
@@ -810,6 +876,7 @@ function abrirEvolucao(){
 
     cartaoSaldoAcumulado(atual)+
 
+    blocoProjecao()+
     '<h2 class="sec">Últimos 6 meses</h2>'+
     '<div class="evGrafico">'+barras+'</div>'+
     '<div class="evLegenda"><span><i class="evPonto evBv"></i>Vendas</span><span><i class="evPonto evBs"></i>Saídas</span></div>'+
@@ -2037,6 +2104,11 @@ async function recarregar(){ try{ await carregarTudo(); }catch(e){ console.error
 // ============================================================
 function vInicio(){
   const r=resumoVendas(), a=alertas();
+  let projRitmo='';
+  try{
+    const p=projecaoMes();
+    if(p.confiavel) projRitmo='<div style="font-size:10.5px;color:var(--muted);margin-top:3px">ritmo: '+brl(p.vendaProjetada)+'</div>';
+  }catch(e){}
   let al='';
   al+=cartaoMetaGastos();
   if(a.contas>0){
@@ -2068,7 +2140,7 @@ function vInicio(){
       '<section class="hero"><div class="brilho"></div><div class="lbl">Venda de hoje</div><div class="val">'+brl(r.dia)+'</div></section>'+
       '<div class="duo">'+
         '<div class="mini"><div class="l">Semana</div><div class="v">'+brl(r.semana)+'</div></div>'+
-        '<div class="mini" style="cursor:pointer" onclick="abrirVendasMes()"><div class="l">Mês</div><div class="v">'+brl(r.mes)+'</div></div>'+
+        '<div class="mini" style="cursor:pointer" onclick="abrirVendasMes()"><div class="l">Mês</div><div class="v">'+brl(r.mes)+'</div>'+projRitmo+'</div>'+
       '</div>'+
     '</div>'+
     '<h2 class="sec">Saldo total em caixa</h2>'+
