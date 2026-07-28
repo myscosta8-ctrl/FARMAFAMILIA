@@ -124,6 +124,9 @@
   .evLinha.evCab{color:var(--muted);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.03em}
   .evMes{flex:0 0 58px;text-transform:capitalize}
   .evVal{flex:1;text-align:right;font-family:var(--g)}
+  .mesNav{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .mesNav span{font-family:var(--g);font-size:16px;font-weight:600}
+  .mesNav button{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:18px;color:var(--pine);cursor:pointer}
   .acCompara{display:flex;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 10px;margin-top:10px}
   .acLado{flex:1;text-align:center}
   .acRot{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.02em;padding:0 4px}
@@ -1992,7 +1995,7 @@ function vInicio(){
       '<section class="hero"><div class="brilho"></div><div class="lbl">Venda de hoje</div><div class="val">'+brl(r.dia)+'</div></section>'+
       '<div class="duo">'+
         '<div class="mini"><div class="l">Semana</div><div class="v">'+brl(r.semana)+'</div></div>'+
-        '<div class="mini"><div class="l">Mês</div><div class="v">'+brl(r.mes)+'</div></div>'+
+        '<div class="mini" style="cursor:pointer" onclick="abrirVendasMes()"><div class="l">Mês</div><div class="v">'+brl(r.mes)+'</div></div>'+
       '</div>'+
     '</div>'+
     '<h2 class="sec">Saldo total em caixa</h2>'+
@@ -2155,6 +2158,82 @@ async function salvarVenda(){
 //  CAIXA
 // ============================================================
 let caixaData='';
+// ============================================================
+//  VENDAS DO MÊS — visão dia a dia, para conferir o que já foi lançado
+// ============================================================
+let mesVendasSel=null;   // {ano, mes} — null até abrir a primeira vez
+function diasNoMes(ano,mes){ return new Date(ano,mes,0).getDate(); }
+
+function abrirVendasMes(){
+  if(!mesVendasSel){
+    const d=new Date(caixaData?caixaData+'T12:00:00':new Date());
+    mesVendasSel={ano:d.getFullYear(), mes:d.getMonth()+1};
+  }
+  abrirFolha('Vendas do mês','<div id="vmCorpo"></div>', redesenharVendasMes);
+}
+function trocarMesVendas(delta){
+  let {ano,mes}=mesVendasSel;
+  mes+=delta;
+  if(mes<1){ mes=12; ano--; } else if(mes>12){ mes=1; ano++; }
+  mesVendasSel={ano,mes};
+  redesenharVendasMes();
+}
+function redesenharVendasMes(){
+  const alvo=document.getElementById('vmCorpo'); if(!alvo) return;
+  const {ano,mes}=mesVendasSel;
+  const ini=new Date(ano,mes-1,1).getTime();
+  const fim=new Date(ano,mes,1).getTime();
+  const hoje=new Date();
+  const ehMesAtual = (ano===hoje.getFullYear() && mes===hoje.getMonth()+1);
+  const ultimoDiaConfere = ehMesAtual ? hoje.getDate() : diasNoMes(ano,mes);
+
+  const vendasDoMes = movimentos.filter(function(m){
+    return m.tipo==='ENTRADA' && m.categoria==='Venda' && m.ts>=ini && m.ts<fim;
+  }).sort(function(a,b){ return a.ts-b.ts; });
+
+  const total = vendasDoMes.reduce(function(s,m){ return s+m.valor; },0);
+
+  // dias do mês (até hoje, se for o mês corrente) que não têm nenhuma venda lançada
+  const diasComVenda={};
+  vendasDoMes.forEach(function(m){ diasComVenda[dataLocal(m.ts)]=1; });
+  const diasFaltando=[];
+  for(let dia=1; dia<=ultimoDiaConfere; dia++){
+    const iso=ano+'-'+String(mes).padStart(2,'0')+'-'+String(dia).padStart(2,'0');
+    if(!diasComVenda[iso]) diasFaltando.push(iso);
+  }
+
+  const media = vendasDoMes.length ? total/vendasDoMes.length : 0;
+
+  const lista = vendasDoMes.length
+    ? vendasDoMes.slice().reverse().map(function(m){
+        const ed=podeEditar(m);
+        const dt=new Date(m.ts);
+        return '<div class="item"'+(ed?' style="cursor:pointer" onclick="fecharFolha();abrirEditar(\''+m.id+'\')"':'')+'>'+
+          '<div class="iconC" style="background:#E7F6EF;color:var(--emerald)">'+IC.up+'</div>'+
+          '<div style="flex:1"><div style="font-size:14px;font-weight:500">'+dt.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'})+'</div>'+
+          (m.desc&&m.desc!=='Venda'?'<div style="font-size:11.5px;color:var(--muted)">'+m.desc+'</div>':'')+'</div>'+
+          '<div style="text-align:right"><div class="val2" style="color:var(--emerald)">'+brl(m.valor)+'</div>'+
+          (ed?'<div style="font-size:10px;color:var(--muted);margin-top:2px">toque para corrigir</div>':'')+'</div></div>';
+      }).join('')
+    : '<div class="vazio">Nenhuma venda lançada neste mês.</div>';
+
+  alvo.innerHTML =
+    '<div class="mesNav">'+
+      '<button onclick="trocarMesVendas(-1)">‹</button>'+
+      '<span>'+NOMES_MES[mes-1].charAt(0).toUpperCase()+NOMES_MES[mes-1].slice(1)+'/'+ano+'</span>'+
+      '<button onclick="trocarMesVendas(1)">›</button>'+
+    '</div>'+
+    '<div class="totalAberto"><span>'+vendasDoMes.length+' dia(s) com venda lançada</span><strong>'+brl(total)+'</strong></div>'+
+    (vendasDoMes.length?'<div class="dica" style="text-align:center;margin-top:2px">Média por dia lançado: '+brl(media)+'</div>':'')+
+    (diasFaltando.length
+      ? '<div class="dica" style="color:var(--rose);background:#FDECEC;border-radius:10px;padding:9px 12px;margin-top:8px">'+
+          diasFaltando.length+' dia(s) '+(ehMesAtual?'até hoje ':'')+'sem venda lançada: '+
+          diasFaltando.map(function(d){ return dm(d); }).join(', ')+
+        '</div>'
+      : (vendasDoMes.length?'<div class="dica" style="color:var(--emerald);margin-top:8px;text-align:center">Todos os dias '+(ehMesAtual?'até hoje ':'')+'têm venda lançada.</div>':''))+
+    '<h2 class="sec" style="margin-top:14px">Lançamentos</h2>'+lista;
+}
+
 function vCaixa(){
   if(!caixaData) caixaData=hojeISO();
   const d0=new Date(caixaData+'T00:00:00').getTime(), am=d0+86400000;
@@ -2162,6 +2241,7 @@ function vCaixa(){
   const doDia=movimentos.filter(function(m){ return m.ts>=d0&&m.ts<am; }).sort(function(a,b){ return b.ts-a.ts; });
   const ehHoje = caixaData===hojeISO();
   return '<div><label class="campo" style="margin-top:0">Dia</label><input type="date" value="'+caixaData+'" onchange="caixaData=this.value;render()"/></div>'+
+    '<button class="btnS" style="width:100%" onclick="abrirVendasMes()">Ver vendas do mês, dia a dia</button>'+
     '<div class="duo">'+
       '<div class="mini"><div class="l">Entradas</div><div class="v" style="color:var(--emerald)">'+brl(ent)+'</div></div>'+
       '<div class="mini"><div class="l">Saídas</div><div class="v" style="color:var(--rose)">'+brl(sai)+'</div></div>'+
