@@ -943,6 +943,65 @@ function bloqueado(acao){
 }
 
 // Tela de administração — só o administrador enxerga
+// ============================================================
+//  META DE GASTOS MENSAIS
+// ============================================================
+let metaTeto=null;
+async function carregarMeta(){
+  try{
+    const r=await api('meta_financeira?select=*&id=eq.1');
+    metaTeto=(r&&r[0]&&r[0].teto_mensal!=null)?Number(r[0].teto_mensal):null;
+  }catch(e){ metaTeto=null; }
+}
+// Tudo que já saiu do caixa este mês + tudo que ainda vai sair (contas
+// pendentes com vencimento dentro do mês). Sem contar duas vezes: contas
+// já pagas viram lançamento no caixa e não entram de novo aqui.
+function comprometidoMes(){
+  const hoje=new Date();
+  const ini=new Date(hoje.getFullYear(),hoje.getMonth(),1).getTime();
+  const fim=new Date(hoje.getFullYear(),hoje.getMonth()+1,1).getTime();
+  const jaSaiu=movimentos.filter(function(m){ return m.tipo==='SAIDA'&&m.ts>=ini&&m.ts<fim; })
+    .reduce(function(s,m){ return s+m.valor; },0);
+  const aindaVence=contas.filter(function(c){
+    if(c.tipo!=='PAGAR'||c.status==='PAGO') return false;
+    const t=new Date(c.venc+'T12:00:00').getTime();
+    return t>=ini&&t<fim;
+  }).reduce(function(s,c){ return s+c.valor; },0);
+  return {jaSaiu:jaSaiu, aindaVence:aindaVence, total:jaSaiu+aindaVence};
+}
+function cartaoMetaGastos(){
+  if(metaTeto==null||metaTeto<=0) return '';
+  const c=comprometidoMes();
+  const pct=Math.min(999,Math.round(c.total/metaTeto*100));
+  const cor = pct<80?'var(--emerald)':pct<100?'#8A5A00':'var(--rose)';
+  const bg  = pct<80?'#E7F6EF':pct<100?'#FDF1DC':'#FDECEC';
+  const msg = pct<80?'Dentro do planejado'
+    : pct<100?'Perto do teto do mês'
+    : 'Passou do teto planejado para o mês';
+  return '<div class="item" style="cursor:pointer" onclick="irPara(\'contas\')">'+
+    '<div class="iconC" style="background:'+bg+';color:'+cor+'">'+IC.rel+'</div>'+
+    '<div style="flex:1"><div style="font-size:14.5px;font-weight:600">'+msg+'</div>'+
+    '<div style="font-size:12px;color:var(--muted);margin-top:2px">'+brl(c.total)+' de '+brl(metaTeto)+' · já saiu '+brl(c.jaSaiu)+', falta vencer '+brl(c.aindaVence)+'</div>'+
+    '<div style="height:6px;background:#EEEAE9;border-radius:4px;margin-top:7px;overflow:hidden">'+
+      '<div style="width:'+Math.min(100,pct)+'%;height:100%;background:'+cor+'"></div></div></div>'+
+    '<div class="val2" style="color:'+cor+'">'+pct+'%</div></div>';
+}
+
+async function salvarMetaGastos(remover){
+  if(!souAdmin){ alert('Área exclusiva do administrador.'); return; }
+  const valor = remover ? null : parseValor((document.getElementById('admMeta')||{}).value);
+  if(!remover && (isNaN(valor)||valor<=0)){ alert('Informe um valor válido.'); return; }
+  const b=document.getElementById('admMetaBtn');
+  if(b){ b.textContent='Salvando…'; b.disabled=true; }
+  try{
+    await api('meta_financeira?id=eq.1',{method:'PATCH',body:JSON.stringify({
+      teto_mensal:remover?null:valor, atualizado_em:new Date().toISOString()
+    })});
+    metaTeto=remover?null:valor;
+    await registrar(remover?'BLOQUEOU':'LIBEROU','Meta de gastos', remover?'Teto removido':'Teto: '+brl(valor), null);
+    fecharFolha(); abrirAdministracao(); render();
+  }catch(e){ alert(e.message); if(b){ b.textContent='Salvar teto'; b.disabled=false; } }
+}
 function abrirAdministracao(){
   if(!souAdmin){ alert('Área exclusiva do administrador.'); return; }
   const linha=function(campo,titulo,sub){
@@ -962,6 +1021,19 @@ function abrirAdministracao(){
     linha('pode_excluir','Excluir registros','Apagar lançamentos e contas')+
     linha('pode_pagar','Dar baixa em contas','Marcar boletos como pagos')+
     linha('pode_ver_relatorios','Ver relatórios','Aba de relatórios e comparativos')+
+    '<h2 class="sec" style="margin-top:16px">Teto de gastos do mês</h2>'+
+    (function(){
+      const hoje=new Date();
+      const mesPassado=resumoMes(hoje.getMonth()===0?hoje.getFullYear()-1:hoje.getFullYear(), hoje.getMonth()===0?12:hoje.getMonth());
+      const ref=mesPassado.vendas||mesPassado.ent||0;
+      const sugMin=ref*0.65, sugMax=ref*0.72;
+      return '<div class="dica" style="margin-top:0">Alerta quando as saídas do mês (já pagas + a vencer) passarem deste valor. '+
+        (ref?'Com base no faturamento do mês passado ('+brl(ref)+'), farmácias costumam ficar entre '+brl(sugMin)+' e '+brl(sugMax)+' de compras — mas o número final é seu.':'')+
+        '</div>'+
+        '<input id="admMeta" inputmode="numeric" placeholder="0,00" oninput="mascaraMoeda(this)" value="'+(metaTeto?metaTeto.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}):'')+'"/>'+
+        '<button class="primario" id="admMetaBtn" onclick="salvarMetaGastos()">Salvar teto</button>'+
+        (metaTeto?'<button class="btnExcluir" onclick="salvarMetaGastos(true)">Remover teto (desligar alerta)</button>':'');
+    })()+
     '<h2 class="sec" style="margin-top:16px">Usuários</h2>'+
     (operadores.length?operadores.map(function(o){
       const ehAdmin=String(o.email).toLowerCase()===String((Sessao.ler()||{}).email||'').toLowerCase()&&souAdmin;
@@ -1966,6 +2038,7 @@ async function recarregar(){ try{ await carregarTudo(); }catch(e){ console.error
 function vInicio(){
   const r=resumoVendas(), a=alertas();
   let al='';
+  al+=cartaoMetaGastos();
   if(a.contas>0){
     const p=a.proxima;
     al+=alertaCard(IC.relogio,'var(--rose)','#FDECEC',
@@ -2969,6 +3042,7 @@ function fecharFolha(){ pararScanner(); const o=document.getElementById('overlay
 async function aposCarregar(){
   try{ await carregarRecorrentes(); await gerarRecorrentes(); }catch(e){}
   try{ avisarVencimentos(false); }catch(e){}
+  try{ await carregarMeta(); }catch(e){}
   try{ lembrarBackup(); }catch(e){}
 }
 async function iniciar(){
