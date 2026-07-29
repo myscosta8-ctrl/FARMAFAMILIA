@@ -309,7 +309,7 @@ async function carregarTudo(){
       api('contas?select=*&order=vencimento.asc'),
       api('categorias?select=*&order=nome.asc')
     ]);
-    movimentos = (res[0]||[]).map(function(x){ return {id:x.id, ts:new Date(x.data_hora).getTime(), tipo:x.tipo, categoria:x.categoria, valor:Number(x.valor), desc:x.descricao, contaId:x.conta_id||null, criadoEm:x.criado_em?new Date(x.criado_em).getTime():null}; });
+    movimentos = (res[0]||[]).map(function(x){ return {id:x.id, ts:new Date(x.data_hora).getTime(), tipo:x.tipo, categoria:x.categoria, valor:Number(x.valor), desc:x.descricao, contaId:x.conta_id||null, origem:x.origem_pagamento||null, criadoEm:x.criado_em?new Date(x.criado_em).getTime():null}; });
     produtos   = (res[1]||[]).map(function(x){ return {id:x.id, desc:x.descricao, codigo:x.codigo_barras||'', estoque:Number(x.estoque), minimo:Number(x.estoque_minimo), validade:x.validade}; });
     contas     = (res[2]||[]).map(function(x){ return {id:x.id, tipo:x.tipo, origem:x.origem||'MANUAL', categoria:x.categoria||'', desc:x.descricao, valor:Number(x.valor), venc:x.vencimento, status:x.status, linha:x.linha_digitavel||'', documento:x.documento||'', dataBaixa:x.data_baixa||null}; });
     montarCategorias(res[3]);
@@ -2230,6 +2230,20 @@ function horasRestantes(m){
   return Math.ceil(resta/3600000);
 }
 let editTipo='ENTRADA',editCat='Venda';
+// Origem do dinheiro: não é separação de saldo, é só etiqueta — ajuda a
+// bater com o extrato do banco depois (o que é dinheiro nunca aparece lá).
+const ORIGENS_PAG=[['DINHEIRO','Dinheiro'],['BANCO','Pix / Banco'],['CARTAO','Cartão']];
+function origemTag(o){
+  const m={DINHEIRO:{t:'Dinheiro',c:'#8A5A00',bg:'#FDF1DC'}, BANCO:{t:'Pix/Banco',c:'var(--pine)',bg:'var(--amberSoft)'}, CARTAO:{t:'Cartão',c:'#5B4B8A',bg:'#EEE9F7'}};
+  return m[o]||null;
+}
+function chipsOrigem(idContainer, valorAtual, onEscolher){
+  return '<div class="chips" id="'+idContainer+'">'+
+    ORIGENS_PAG.map(function(o){
+      return '<button class="chip '+(valorAtual===o[0]?'on':'')+'" onclick="'+onEscolher+'(\''+o[0]+'\')">'+o[1]+'</button>';
+    }).join('')+
+  '</div>';
+}
 function abrirEditar(id){
   if(!podeFazer('editar')){ bloqueado('editar'); return; }
   const m=movimentos.filter(function(x){return x.id===id})[0]; if(!m) return;
@@ -2393,14 +2407,16 @@ function vCaixa(){
       '<div class="mini"><div class="l">Saldo</div><div class="v">'+brl(ent-sai)+'</div></div>'+
     '</div>'+
     '<h2 class="sec">Movimentos '+(ehHoje?'de hoje':'de '+dm(caixaData))+'</h2>'+
-    (doDia.length?doDia.map(function(m){ const e=m.tipo==='ENTRADA'; const ed=podeEditar(m); return '<div class="item"'+(ed?' style="cursor:pointer" onclick="abrirEditar(\''+m.id+'\')"':'')+'>'+
+    (doDia.length?doDia.map(function(m){ const e=m.tipo==='ENTRADA'; const ed=podeEditar(m); const og=origemTag(m.origem); return '<div class="item"'+(ed?' style="cursor:pointer" onclick="abrirEditar(\''+m.id+'\')"':'')+'>'+
       '<div class="iconC" style="background:'+(e?'#E7F6EF':'#FDECEC')+';color:'+(e?'var(--emerald)':'var(--rose)')+'">'+(e?IC.up:IC.down)+'</div>'+
-      '<div style="flex:1"><div style="font-size:14px;font-weight:500">'+(m.desc||m.categoria||'Lançamento')+'</div><div style="font-size:11.5px;color:var(--muted)">'+(m.categoria||'')+' · '+new Date(m.ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'</div></div>'+
+      '<div style="flex:1"><div style="font-size:14px;font-weight:500">'+(m.desc||m.categoria||'Lançamento')+'</div>'+
+      '<div style="font-size:11.5px;color:var(--muted);margin-top:2px">'+(m.categoria||'')+' · '+new Date(m.ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+
+      (og?' <span class="tag" style="color:'+og.c+';background:'+og.bg+';margin-left:4px;padding:1px 6px">'+og.t+'</span>':'')+'</div></div>'+
       '<div style="text-align:right"><div class="val2" style="color:'+(e?'var(--emerald)':'var(--rose)')+'">'+(e?'+':'−')+' '+brl(m.valor)+'</div>'+
       (ed?'<div style="font-size:10.5px;color:var(--muted);margin-top:2px">toque para corrigir</div>':'<div style="font-size:10.5px;color:var(--muted);margin-top:2px">prazo encerrado</div>')+'</div></div>'; }).join('')
       :'<div class="vazio">Nenhum lançamento neste dia. Toque em + para adicionar.</div>');
 }
-let movTipo='ENTRADA',movCat='Venda';
+let movTipo='ENTRADA',movCat='Venda',movOrigem=null;
 function abrirMov(){
   movTipo='ENTRADA';movCat='Venda';
   abrirFolha('Novo lançamento',
@@ -2409,13 +2425,23 @@ function abrirMov(){
     '<div id="mPrev" class="previa"></div>'+
     '<label class="campo">Categoria</label><div class="chips" id="mCats"></div>'+
     '<label class="campo">Descrição / natureza do gasto</label><input id="md" list="sugMov" oninput="aplicarSugestao(\'md\',\'mCats\',movTipo,\'escolherMovCat\')" placeholder="Ex: Energia, frete, salário"/>'+listaSugestoes('sugMov')+'<div id="mCatsSug" class="sugLinha"></div>'+
+    '<div id="mOrigemBloco" style="display:none"><label class="campo">De onde saiu o dinheiro</label>'+chipsOrigem('mOrigemChips',movOrigem,'escolherMovOrigem')+'</div>'+
     '<label class="campo">Data</label><input id="mdata" type="date" value="'+hojeISO()+'"/>'+
     '<button class="primario" id="mBtn">Salvar lançamento</button>',
     function(){ setMovTipo('ENTRADA'); document.getElementById('mv').focus(); document.getElementById('mBtn').onclick=salvarMov; });
 }
 function escolherMovCat(c){ movCat=c; setMovTipo(movTipo); }
+function escolherMovOrigem(o){
+  movOrigem=(movOrigem===o)?null:o;
+  const el=document.getElementById('mOrigemChips'); if(el) el.innerHTML=chipsOrigemInterno();
+}
+function chipsOrigemInterno(){
+  return ORIGENS_PAG.map(function(o){ return '<button class="chip '+(movOrigem===o[0]?'on':'')+'" onclick="escolherMovOrigem(\''+o[0]+'\')">'+o[1]+'</button>'; }).join('');
+}
 function setMovTipo(t){
-  movTipo=t;movCat=CATS[t][0];
+  movTipo=t;movCat=CATS[t][0]; movOrigem=null;
+  const bloco=document.getElementById('mOrigemBloco');
+  if(bloco) bloco.style.display=(t==='SAIDA')?'block':'none';
   const tg=document.getElementById('movToggle');
   tg.children[0].style.background=t==='ENTRADA'?'var(--emerald)':'transparent';tg.children[0].style.color=t==='ENTRADA'?'#fff':'var(--muted)';
   tg.children[1].style.background=t==='SAIDA'?'var(--rose)':'transparent';tg.children[1].style.color=t==='SAIDA'?'#fff':'var(--muted)';
@@ -2433,7 +2459,8 @@ async function salvarMov(){
     await api('movimentos',{method:'POST',body:JSON.stringify({
       tipo:movTipo,categoria:movCat,valor:v,
       descricao:document.getElementById('md').value.trim()||null,
-      data_hora:montarDataHora(document.getElementById('mdata').value)
+      data_hora:montarDataHora(document.getElementById('mdata').value),
+      origem_pagamento: movTipo==='SAIDA'?movOrigem:null
     })});
     await registrar('CRIOU', movTipo==='ENTRADA'?'Entrada':'Saída', document.getElementById('md').value.trim()||movCat, v);
     fecharFolha(); await recarregar();
@@ -2627,7 +2654,7 @@ function abrirConta(){
   const boleto = contaAba==='BOLETO';
   const receber = contaAba==='RECEBER';
   const despesa = contaAba==='DESPESA';
-  despCat='Frete'; contaJaPaga=false;
+  despCat='Frete'; contaJaPaga=false; contaOrigemPag=null;
   const titulo = boleto?'Adicionar boleto' : despesa?'Adicionar despesa' : 'Adicionar conta a receber';
   abrirFolha(titulo,
     (boleto?'<button type="button" class="foto" onclick="abrirScannerBoleto()">'+IC.camera+' Ler código de barras</button>'+
@@ -2647,6 +2674,7 @@ function abrirConta(){
     '<div id="cPagoData" style="display:none">'+
       '<label class="campo">'+(receber?'Data do recebimento':'Data do pagamento')+'</label>'+
       '<input id="cdpag" type="date" value="'+hojeISO()+'"/>'+
+      (receber?'':'<label class="campo">De onde saiu o dinheiro</label>'+chipsOrigem('cOrigemChips',contaOrigemPag,'escolherContaOrigem'))+
       '<div class="dica">Entra no caixa nesta data.</div></div>'+
     '<button class="primario" id="cBtn">Salvar</button>'+
     (boleto?'<button class="btnS" style="width:100%;margin-top:10px" id="cBtn2">Salvar e ler o próximo</button>':''),
@@ -2660,7 +2688,11 @@ function abrirConta(){
       if(b2) b2.onclick=function(){ salvarConta(true); };
     });
 }
-let contaJaPaga=false;
+let contaJaPaga=false, contaOrigemPag=null;
+function escolherContaOrigem(o){
+  contaOrigemPag=(contaOrigemPag===o)?null:o;
+  const el=document.getElementById('cOrigemChips'); if(el) el.outerHTML=chipsOrigem('cOrigemChips',contaOrigemPag,'escolherContaOrigem');
+}
 function alternarJaPago(){
   contaJaPaga=!contaJaPaga;
   const ch=document.getElementById('cPago');
@@ -2719,7 +2751,8 @@ async function salvarConta(continuar){
         categoria: despesa?despCat:(boleto?'Distribuidor':'Outros'),
         valor:v, descricao:descricao,
         data_hora:montarDataHora(dataPag),
-        conta_id:idNova
+        conta_id:idNova,
+        origem_pagamento: contaAba==='RECEBER'?null:contaOrigemPag
       })});
     }
     await registrar(contaJaPaga?'PAGOU':'CRIOU', boleto?'Boleto':despesa?'Despesa':'A receber', descricao, v);
@@ -2967,9 +3000,15 @@ function quitar(id){
     '<div class="val2" style="font-size:16px">'+brl(c.valor)+'</div></div>'+
     '<label class="campo">'+(receber?'Data do recebimento':'Data do pagamento')+'</label>'+
     '<input id="qdata" type="date" value="'+sugerida+'"/>'+
+    (receber?'':'<label class="campo">De onde saiu o dinheiro</label>'+chipsOrigem('qOrigemChips',null,'escolherQuitarOrigem'))+
     '<div class="dica">O lançamento entra no caixa nesta data.</div>'+
     '<button class="primario" id="qBtn">Confirmar</button>',
-    function(){ document.getElementById('qBtn').onclick=function(){ confirmarBaixa(id); }; });
+    function(){ quitarOrigem=null; document.getElementById('qBtn').onclick=function(){ confirmarBaixa(id); }; });
+}
+let quitarOrigem=null;
+function escolherQuitarOrigem(o){
+  quitarOrigem=(quitarOrigem===o)?null:o;
+  const el=document.getElementById('qOrigemChips'); if(el) el.outerHTML=chipsOrigem('qOrigemChips',quitarOrigem,'escolherQuitarOrigem');
 }
 async function confirmarBaixa(id){
   const c=contas.filter(function(x){return x.id===id})[0]; if(!c)return;
@@ -2986,7 +3025,8 @@ async function confirmarBaixa(id){
       valor:c.valor,
       descricao:c.desc,
       data_hora:montarDataHora(data),
-      conta_id:c.id
+      conta_id:c.id,
+      origem_pagamento: c.tipo==='PAGAR'?quitarOrigem:null
     })});
     await registrar('PAGOU', c.tipo==='PAGAR'?'Boleto/Conta':'Recebimento', c.desc, c.valor);
     fecharFolha(); await recarregar();
