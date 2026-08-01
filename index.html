@@ -2102,6 +2102,26 @@ async function recarregar(){ try{ await carregarTudo(); }catch(e){ console.error
 // ============================================================
 //  INÍCIO
 // ============================================================
+// Soma as vendas de um período, separadas por dinheiro x eletrônico (Pix/cartão)
+function vendaPorOrigem(desde,ate){
+  let dinheiro=0, eletronico=0, semInfo=0;
+  movimentos.forEach(function(m){
+    if(m.tipo!=='ENTRADA'||m.categoria!=='Venda'||m.ts<desde||m.ts>=ate) return;
+    if(m.origem==='DINHEIRO') dinheiro+=m.valor;
+    else if(m.origem==='BANCO'||m.origem==='CARTAO') eletronico+=m.valor;
+    else semInfo+=m.valor;
+  });
+  return {dinheiro:dinheiro, eletronico:eletronico, semInfo:semInfo};
+}
+function linhaSplitVenda(sp,escuro){
+  if(!sp.dinheiro && !sp.eletronico) return '';
+  const cor = escuro ? '#FFD9D5' : 'var(--muted)';
+  return '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:'+cor+';position:relative">'+
+    (sp.dinheiro?'<span>Dinheiro: '+brl(sp.dinheiro)+'</span>':'')+
+    (sp.eletronico?'<span>Pix/Cartão: '+brl(sp.eletronico)+'</span>':'')+
+    (sp.semInfo?'<span style="opacity:.75">Sem info: '+brl(sp.semInfo)+'</span>':'')+
+  '</div>';
+}
 function vInicio(){
   const r=resumoVendas(), a=alertas();
   let projRitmo='';
@@ -2137,7 +2157,7 @@ function vInicio(){
       }).join('')
     : '<div class="vazio">Nenhum lançamento ainda.</div>';
   return '<div style="display:grid;gap:10px">'+
-      '<section class="hero"><div class="brilho"></div><div class="lbl">Venda de hoje</div><div class="val">'+brl(r.dia)+'</div></section>'+
+      '<section class="hero"><div class="brilho"></div><div class="lbl">Venda de hoje</div><div class="val">'+brl(r.dia)+'</div>'+linhaSplitVenda(vendaPorOrigem(inicioDia(),inicioDia()+86400000),true)+'</section>'+
       '<div class="duo">'+
         '<div class="mini"><div class="l">Semana</div><div class="v">'+brl(r.semana)+'</div></div>'+
         '<div class="mini" style="cursor:pointer" onclick="abrirVendasMes()"><div class="l">Mês</div><div class="v">'+brl(r.mes)+'</div>'+projRitmo+'</div>'+
@@ -2292,36 +2312,50 @@ async function salvarEdicao(id){
     fecharFolha(); await recarregar();
   }catch(e){ alert(e.message); b.textContent='Salvar correção'; b.disabled=false; }
 }
-let vendaOrigem=null;
+// Venda do dia dividida por forma de pagamento. Pix, crédito e débito
+// entram juntos como "Pix/Cartão" — só o dinheiro em espécie fica separado,
+// que é a divisão que realmente importa para bater o caixa físico.
+function totalVendaSplit(){
+  const d=parseValor((document.getElementById('vvDinheiro')||{}).value)||0;
+  const e=parseValor((document.getElementById('vvEletronico')||{}).value)||0;
+  const el=document.getElementById('vPrevTotal');
+  if(el) el.textContent = (d||e) ? 'Total do dia: '+brl(d+e) : '';
+  return {dinheiro:d, eletronico:e, total:d+e};
+}
 function abrirVenda(){
   if(!podeFazer('criar')){ bloqueado('criar'); return; }
-  vendaOrigem=null;
   abrirFolha('Lançar venda',
-    '<label class="campo">Valor da venda</label>'+
-    '<input id="vv" inputmode="numeric" placeholder="0,00" oninput="mascaraMoeda(this);previa(\'vv\',\'vPrev\')" style="font-size:24px;font-family:var(--g);text-align:center"/>'+
-    '<div id="vPrev" class="previa"></div>'+
-    '<label class="campo">Onde caiu esse dinheiro (opcional)</label>'+chipsOrigem('vOrigemChips',vendaOrigem,'escolherVendaOrigem')+
+    '<label class="campo">Dinheiro (espécie)</label>'+
+    '<input id="vvDinheiro" inputmode="numeric" placeholder="0,00" oninput="mascaraMoeda(this);totalVendaSplit()" style="font-size:20px;font-family:var(--g);text-align:center"/>'+
+    '<label class="campo">Pix / Cartão (tudo junto)</label>'+
+    '<input id="vvEletronico" inputmode="numeric" placeholder="0,00" oninput="mascaraMoeda(this);totalVendaSplit()" style="font-size:20px;font-family:var(--g);text-align:center"/>'+
+    '<div id="vPrevTotal" class="previa"></div>'+
     '<label class="campo">Data</label><input id="vdata" type="date" value="'+hojeISO()+'"/>'+
+    '<div class="dica">Se foi tudo de um jeito só, preencha um campo e deixe o outro em branco.</div>'+
     '<button class="primario" id="vBtn">Registrar venda</button>',
     function(){
-      const e=document.getElementById('vv'); e.focus();
+      const e=document.getElementById('vvDinheiro'); e.focus();
       document.getElementById('vBtn').onclick=salvarVenda;
-      e.addEventListener('keydown',function(ev){ if(ev.key==='Enter') salvarVenda(); });
     });
 }
-function escolherVendaOrigem(o){
-  vendaOrigem=(vendaOrigem===o)?null:o;
-  const el=document.getElementById('vOrigemChips'); if(el) el.outerHTML=chipsOrigem('vOrigemChips',vendaOrigem,'escolherVendaOrigem');
-}
 async function salvarVenda(){
-  const v=parseValor(document.getElementById('vv').value); if(!v)return;
+  const sp=totalVendaSplit();
+  if(!sp.total){ alert('Informe ao menos um valor.'); return; }
   const b=document.getElementById('vBtn'); b.textContent='Salvando…'; b.disabled=true;
+  const data=montarDataHora(document.getElementById('vdata').value);
   try{
-    await api('movimentos',{method:'POST',body:JSON.stringify({
-      tipo:'ENTRADA',categoria:'Venda',valor:v,descricao:'Venda',
-      data_hora:montarDataHora(document.getElementById('vdata').value),
-      origem_pagamento:vendaOrigem
-    })});
+    if(sp.dinheiro>0){
+      await api('movimentos',{method:'POST',body:JSON.stringify({
+        tipo:'ENTRADA',categoria:'Venda',valor:sp.dinheiro,descricao:'Venda',
+        data_hora:data, origem_pagamento:'DINHEIRO'
+      })});
+    }
+    if(sp.eletronico>0){
+      await api('movimentos',{method:'POST',body:JSON.stringify({
+        tipo:'ENTRADA',categoria:'Venda',valor:sp.eletronico,descricao:'Venda',
+        data_hora:data, origem_pagamento:'BANCO'
+      })});
+    }
     fecharFolha(); await recarregar();
   }catch(e){ alert(e.message); b.textContent='Registrar venda'; b.disabled=false; }
 }
@@ -2378,12 +2412,12 @@ function redesenharVendasMes(){
 
   const lista = vendasDoMes.length
     ? vendasDoMes.slice().reverse().map(function(m){
-        const ed=podeEditar(m);
+        const ed=podeEditar(m); const og=origemTag(m.origem);
         const dt=new Date(m.ts);
         return '<div class="item"'+(ed?' style="cursor:pointer" onclick="fecharFolha();abrirEditar(\''+m.id+'\')"':'')+'>'+
           '<div class="iconC" style="background:#E7F6EF;color:var(--emerald)">'+IC.up+'</div>'+
           '<div style="flex:1"><div style="font-size:14px;font-weight:500">'+dt.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'})+'</div>'+
-          (m.desc&&m.desc!=='Venda'?'<div style="font-size:11.5px;color:var(--muted)">'+m.desc+'</div>':'')+'</div>'+
+          '<div style="font-size:11.5px;color:var(--muted)">'+(m.desc&&m.desc!=='Venda'?m.desc:'')+(og?(m.desc&&m.desc!=='Venda'?' · ':'')+og.t:'')+'</div></div>'+
           '<div style="text-align:right"><div class="val2" style="color:var(--emerald)">'+brl(m.valor)+'</div>'+
           (ed?'<div style="font-size:10px;color:var(--muted);margin-top:2px">toque para corrigir</div>':'')+'</div></div>';
       }).join('')
@@ -2396,6 +2430,7 @@ function redesenharVendasMes(){
       '<button onclick="trocarMesVendas(1)">›</button>'+
     '</div>'+
     '<div class="totalAberto"><span>'+vendasDoMes.length+' dia(s) com venda lançada</span><strong>'+brl(total)+'</strong></div>'+
+    linhaSplitVenda(vendaPorOrigem(ini,fim))+
     (vendasDoMes.length?'<div class="dica" style="text-align:center;margin-top:2px">Média por dia lançado: '+brl(media)+'</div>':'')+
     (diasFaltando.length
       ? '<div class="dica" style="color:var(--rose);background:#FDECEC;border-radius:10px;padding:9px 12px;margin-top:8px">'+
