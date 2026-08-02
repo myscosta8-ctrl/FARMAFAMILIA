@@ -512,6 +512,9 @@ function resultadosBusca(){
   }
   if(buscaTipo==='TODOS'||buscaTipo==='CONTAS'){
     contas.forEach(function(c){
+      // No modo "Tudo", uma conta paga já aparece como o lançamento de caixa
+      // vinculado — listar os dois somaria o mesmo dinheiro em dobro.
+      if(buscaTipo==='TODOS' && c.status==='PAGO' && movimentoDaConta(c.id)) return;
       const ts=new Date(c.venc+'T12:00:00').getTime();
       if(combina((c.desc||'')+' '+(c.categoria||'')+' '+(c.documento||''), c.valor, ts))
         itens.push({tipo:'conta', id:c.id, ts:ts, titulo:c.desc,
@@ -2273,7 +2276,7 @@ function abrirEditar(id){
   if(!podeFazer('editar')){ bloqueado('editar'); return; }
   const m=movimentos.filter(function(x){return x.id===id})[0]; if(!m) return;
   if(!podeEditar(m)){ alert('Este lançamento tem mais de 72 horas e não pode mais ser alterado.'); return; }
-  editTipo=m.tipo; editCat=m.categoria||CATS[m.tipo][0];
+  editTipo=m.tipo; editCat=m.categoria||CATS[m.tipo][0]; editOrigem=m.origem||null;
   const dataISO=new Date(m.ts).getFullYear()+'-'+String(new Date(m.ts).getMonth()+1).padStart(2,'0')+'-'+String(new Date(m.ts).getDate()).padStart(2,'0');
   const h=horasRestantes(m);
   abrirFolha('Corrigir lançamento',
@@ -2282,6 +2285,7 @@ function abrirEditar(id){
     '<div id="ePrev" class="previa"></div>'+
     '<label class="campo">Categoria</label><div class="chips" id="eCats"></div>'+
     '<label class="campo">Descrição</label>'+listaSugestoes('sugEdit')+'<input id="ed" list="sugEdit" value="'+(m.desc||'').replace(/"/g,'&quot;')+'"/>'+
+    '<label class="campo" id="eOrigemLabel">'+(editTipo==='SAIDA'?'De onde saiu o dinheiro':'Onde caiu esse dinheiro')+' (opcional)</label>'+chipsOrigem('eOrigemChips',editOrigem,'escolherEditOrigem')+
     '<label class="campo">Data</label><input id="edata" type="date" value="'+dataISO+'"/>'+
     '<div class="dica">Pode ser corrigido por mais '+(h!=null?h+'h':'algum tempo')+'.</div>'+
     '<button class="primario" id="eBtn">Salvar correção</button>'+
@@ -2292,12 +2296,18 @@ function abrirEditar(id){
       document.getElementById('eDel').onclick=function(){ apagarMov(id); };
     });
 }
+let editOrigem=null;
+function escolherEditOrigem(o){
+  editOrigem=(editOrigem===o)?null:o;
+  const el=document.getElementById('eOrigemChips'); if(el) el.outerHTML=chipsOrigem('eOrigemChips',editOrigem,'escolherEditOrigem');
+}
 function setEditTipo(t,catInicial){
   editTipo=t; editCat=catInicial||CATS[t][0];
   const tg=document.getElementById('edToggle');
   tg.children[0].style.background=t==='ENTRADA'?'var(--emerald)':'transparent'; tg.children[0].style.color=t==='ENTRADA'?'#fff':'var(--muted)';
   tg.children[1].style.background=t==='SAIDA'?'var(--rose)':'transparent'; tg.children[1].style.color=t==='SAIDA'?'#fff':'var(--muted)';
   document.getElementById('eCats').innerHTML=categoriasOrdenadas(t).map(function(c){ return '<button class="chip '+(c===editCat?'on':'')+'" onclick="editCat=\''+c+'\';setEditTipo(editTipo,\''+c+'\')">'+c+'</button>'; }).join('')+'<button class="chip chipNova" onclick="novaCategoria(\''+t+'\',\'edit\')">+ nova</button>';
+  const rot=document.getElementById('eOrigemLabel'); if(rot) rot.textContent=(t==='SAIDA'?'De onde saiu o dinheiro':'Onde caiu esse dinheiro')+' (opcional)';
 }
 async function salvarEdicao(id){
   const v=parseValor(document.getElementById('ev').value); if(!v||isNaN(v))return;
@@ -2306,7 +2316,8 @@ async function salvarEdicao(id){
     await api('movimentos?id=eq.'+id,{method:'PATCH',body:JSON.stringify({
       tipo:editTipo, categoria:editCat, valor:v,
       descricao:document.getElementById('ed').value.trim()||null,
-      data_hora:montarDataHora(document.getElementById('edata').value)
+      data_hora:montarDataHora(document.getElementById('edata').value),
+      origem_pagamento:editOrigem
     })});
     await registrar('EDITOU', editTipo==='ENTRADA'?'Entrada':'Saída', document.getElementById('ed').value.trim(), v);
     fecharFolha(); await recarregar();
