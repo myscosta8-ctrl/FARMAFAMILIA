@@ -840,6 +840,73 @@ function blocoProjecao(){
     '<div class="dica">Projeção simples: estica a média de venda por dia até o fim do mês. Não considera fim de semana nem sazonalidade — é só um ritmo, não uma promessa.</div>';
 }
 
+// ============================================================
+//  META DE LUCRO (área separada, fora do Início)
+// ============================================================
+function abrirMetaLucro(){
+  if(!podeFazer('relatorios')){ bloqueado('relatorios'); return; }
+  const hoje=new Date();
+  const R=resumoMes(hoje.getFullYear(), hoje.getMonth()+1);
+  const comp=comprometidoMes();
+  const sit=situacaoLucro(R.vendas, comp.total, metaLucroPct);
+
+  // também mostra a projeção do mês (usa a mesma lógica de ritmo já existente)
+  let sitProj=null;
+  try{
+    const p=projecaoMes();
+    if(p.confiavel) sitProj=situacaoLucro(p.vendaProjetada, p.comp.total, metaLucroPct);
+  }catch(e){}
+
+  const cor = sit.bateuMeta?'var(--emerald)':'var(--rose)';
+  const corProj = sitProj&&sitProj.bateuMeta?'var(--emerald)':'var(--rose)';
+
+  // histórico dos últimos meses fechados, pra ver a tendência da margem
+  const hist=[];
+  for(let k=1;k<=5;k++){
+    const d=new Date(hoje.getFullYear(), hoje.getMonth()-k, 1);
+    const Rm=resumoMes(d.getFullYear(), d.getMonth()+1);
+    if(Rm.vendas>0){
+      const s=situacaoLucro(Rm.vendas, Rm.sai, metaLucroPct);
+      hist.push({rot:NOMES_MES[d.getMonth()]+'/'+String(d.getFullYear()).slice(2), s:s});
+    }
+  }
+
+  abrirFolha('Meta de lucro',
+    '<div class="dica" style="margin-top:0">Meta: guardar '+metaLucroPct+'% do faturamento como lucro — ou seja, gastar no máximo '+(100-metaLucroPct)+'% do que entra.</div>'+
+
+    '<section class="cmpHero">'+
+      '<div class="cmpHeroRot">Margem deste mês (até agora)</div>'+
+      '<div class="cmpHeroVal" style="color:'+cor+'">'+(sit.margemReal!=null?sit.margemReal.toFixed(1)+'%':'—')+'</div>'+
+      '<div class="cmpHeroSub">Meta: '+metaLucroPct+'% '+
+        '<span class="cmpBadge" style="background:'+(sit.bateuMeta?'#1E7A55':'#8E1A15')+'">'+(sit.bateuMeta?'dentro da meta':'abaixo da meta')+'</span>'+
+      '</div>'+
+    '</section>'+
+
+    '<div class="cmpCard" style="margin-top:9px"><div class="cmpCardTopo"><span>Faturamento até agora</span></div>'+
+      '<div class="cmpCardVal">'+brl(sit.faturamento)+'</div></div>'+
+    '<div class="cmpCard" style="margin-top:8px"><div class="cmpCardTopo"><span>Gastos até agora</span></div>'+
+      '<div class="cmpCardVal" style="color:var(--rose)">'+brl(sit.gastos)+'</div></div>'+
+    '<div class="cmpCard" style="margin-top:8px"><div class="cmpCardTopo"><span>Lucro até agora</span><strong style="color:'+cor+'">'+brl(sit.lucro)+'</strong></div>'+
+      '<div class="cmpMini">'+(sit.folga>=0
+        ? 'ainda cabe gastar '+brl(sit.folga)+' sem sair da meta'
+        : 'já passou '+brl(Math.abs(sit.folga))+' do que a meta permitia')+'</div></div>'+
+
+    (sitProj ? '<h2 class="sec" style="margin-top:14px">Se o mês seguir nesse ritmo</h2>'+
+      '<div class="cmpCard"><div class="cmpCardTopo"><span>Margem projetada</span><strong style="color:'+corProj+'">'+sitProj.margemReal.toFixed(1)+'%</strong></div>'+
+      '<div class="cmpMini">lucro projetado: '+brl(sitProj.lucro)+' de '+brl(sitProj.faturamento)+' faturados</div></div>' : '')+
+
+    (hist.length ? '<h2 class="sec" style="margin-top:14px">Meses anteriores</h2>'+
+      hist.map(function(h){
+        const c = h.s.bateuMeta?'var(--emerald)':'var(--rose)';
+        return '<div class="evLinha"><span class="evMes">'+h.rot+'</span>'+
+          '<span class="evVal">'+brl(h.s.faturamento)+'</span>'+
+          '<strong class="evVal" style="color:'+c+'">'+(h.s.margemReal!=null?h.s.margemReal.toFixed(1)+'%':'—')+'</strong></div>';
+      }).join('') : '')+
+
+    (souAdmin ? '<div class="dica" style="margin-top:12px">Para mudar a meta de '+metaLucroPct+'%, vá em Menu → Administração.</div>' : '')
+  );
+}
+
 function abrirEvolucao(){
   const meses=seriesMeses(6);
   const comDados=meses.filter(function(m){ return m.ent>0||m.sai>0; });
@@ -1029,6 +1096,25 @@ async function carregarMeta(){
     metaTeto=(r&&r[0]&&r[0].teto_mensal!=null)?Number(r[0].teto_mensal):null;
   }catch(e){ metaTeto=null; }
 }
+let metaLucroPct=15;
+async function carregarMetaLucro(){
+  try{
+    const r=await api('meta_lucro?select=*&id=eq.1');
+    metaLucroPct=(r&&r[0]&&r[0].percentual!=null)?Number(r[0].percentual):15;
+  }catch(e){ metaLucroPct=15; }
+}
+// Situação da margem de lucro de um mês: quanto precisa sobrar (meta%) x
+// quanto sobrou de verdade (ou está projetado a sobrar).
+function situacaoLucro(faturamento,gastos,metaPct){
+  const lucro=faturamento-gastos;
+  const margemReal = faturamento>0 ? (lucro/faturamento*100) : null;
+  const lucroAlvo = faturamento*(metaPct/100);
+  const gastoMax = faturamento*(1-metaPct/100);
+  const folga = gastoMax-gastos;   // positivo = ainda cabe gastar; negativo = já passou do limite
+  return {faturamento:faturamento, gastos:gastos, lucro:lucro, margemReal:margemReal,
+          lucroAlvo:lucroAlvo, gastoMax:gastoMax, folga:folga,
+          bateuMeta: margemReal!==null && margemReal>=metaPct};
+}
 // Tudo que já saiu do caixa este mês + tudo que ainda vai sair (contas
 // pendentes com vencimento dentro do mês). Sem contar duas vezes: contas
 // já pagas viram lançamento no caixa e não entram de novo aqui.
@@ -1078,6 +1164,21 @@ async function salvarMetaGastos(remover){
     fecharFolha(); abrirAdministracao(); render();
   }catch(e){ alert(e.message); if(b){ b.textContent='Salvar teto'; b.disabled=false; } }
 }
+async function salvarMetaLucroAdmin(){
+  if(!souAdmin){ alert('Área exclusiva do administrador.'); return; }
+  const pct=parseValor(document.getElementById('admMetaLucro').value);
+  if(isNaN(pct)||pct<=0||pct>=100){ alert('Informe um percentual entre 1 e 99.'); return; }
+  const b=document.getElementById('admMetaLucroBtn');
+  if(b){ b.textContent='Salvando…'; b.disabled=true; }
+  try{
+    await api('meta_lucro?id=eq.1',{method:'PATCH',body:JSON.stringify({
+      percentual:pct, atualizado_em:new Date().toISOString()
+    })});
+    metaLucroPct=pct;
+    await registrar('LIBEROU','Meta de lucro','Meta: '+pct+'%', null);
+    fecharFolha(); abrirAdministracao();
+  }catch(e){ alert(e.message); if(b){ b.textContent='Salvar meta de lucro'; b.disabled=false; } }
+}
 function abrirAdministracao(){
   if(!souAdmin){ alert('Área exclusiva do administrador.'); return; }
   const linha=function(campo,titulo,sub){
@@ -1110,6 +1211,10 @@ function abrirAdministracao(){
         '<button class="primario" id="admMetaBtn" onclick="salvarMetaGastos()">Salvar teto</button>'+
         (metaTeto?'<button class="btnExcluir" onclick="salvarMetaGastos(true)">Remover teto (desligar alerta)</button>':'');
     })()+
+    '<h2 class="sec" style="margin-top:16px">Meta de lucro</h2>'+
+    '<div class="dica" style="margin-top:0">Percentual do faturamento que deve sobrar como lucro. O app avisa quando o mês está abaixo disso.</div>'+
+    '<input id="admMetaLucro" inputmode="numeric" placeholder="15" value="'+metaLucroPct+'"/>'+
+    '<button class="primario" id="admMetaLucroBtn" onclick="salvarMetaLucroAdmin()">Salvar meta de lucro</button>'+
     '<h2 class="sec" style="margin-top:16px">Usuários</h2>'+
     (operadores.length?operadores.map(function(o){
       const ehAdmin=String(o.email).toLowerCase()===String((Sessao.ler()||{}).email||'').toLowerCase()&&souAdmin;
@@ -1359,6 +1464,10 @@ function abrirMenu(){
     '<div class="drSecao">Categorias</div>'+
     item(IC.rel,'Reclassificar categorias','Corrigir a categoria em massa',"abrirReclassificar()")+
     item(IC.contas,'Gerenciar categorias','Criar, renomear, excluir',"abrirGerenciarCategorias()")+
+
+    '<div class="drSecao">Metas e Indicadores</div>'+
+    item(IC.rel,'Meta de lucro',metaLucroPct+'% do faturamento',"abrirMetaLucro()")+
+    item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
 
     '<div class="drSecao">Contas</div>'+
     item(IC.relogio,'Contas de todo mês','Aluguel, luz, salário…',"abrirRecorrentes()")+
@@ -3261,6 +3370,7 @@ async function aposCarregar(){
   try{ await carregarRecorrentes(); await gerarRecorrentes(); }catch(e){}
   try{ avisarVencimentos(false); }catch(e){}
   try{ await carregarMeta(); }catch(e){}
+  try{ await carregarMetaLucro(); }catch(e){}
   try{ lembrarBackup(); }catch(e){}
 }
 async function iniciar(){
