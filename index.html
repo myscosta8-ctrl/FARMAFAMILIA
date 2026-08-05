@@ -127,6 +127,13 @@
   .evLegenda span{display:flex;align-items:center;gap:5px}
   .evPonto{width:9px;height:9px;border-radius:3px;display:inline-block}
   .evLinha{display:flex;align-items:center;padding:9px 4px;border-bottom:1px solid var(--line);font-size:12.5px;gap:6px}
+  .dreBloco{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:4px 13px}
+  .dreLinha{display:flex;justify-content:space-between;align-items:center;padding:9px 0;font-size:13px;border-bottom:1px solid var(--line)}
+  .dreLinha:last-child{border-bottom:none}
+  .dreLinha.dreIndent{padding-left:12px;font-size:12.5px;color:var(--muted)}
+  .dreLinha.dreForte{font-weight:700;font-family:var(--g)}
+  .dreVal{font-family:var(--g)}
+  .dreVal em{font-style:normal;font-size:10.5px;color:var(--muted);margin-left:4px}
   .evLinha.evCab{color:var(--muted);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.03em}
   .evMes{flex:0 0 58px;text-transform:capitalize}
   .evVal{flex:1;text-align:right;font-family:var(--g)}
@@ -843,6 +850,145 @@ function blocoProjecao(){
 // ============================================================
 //  META DE LUCRO (área separada, fora do Início)
 // ============================================================
+// ============================================================
+//  DRE SIMPLIFICADO (Demonstrativo de Resultado do mês)
+// ============================================================
+function grupoDaCategoria(nome){
+  const c=categoriasFull.filter(function(x){ return x.nome===nome && x.tipo==='SAIDA'; })[0];
+  return (c && c.grupo) ? c.grupo : 'Outros';
+}
+function montarDRE(ano,mes){
+  const iv=limitesMes(ano,mes);
+  const R=resumoMes(ano,mes);
+  const cats=porCategoria('SAIDA',iv[0],iv[1]);
+  const porGrupo={};
+  cats.forEach(function(c){ const g=grupoDaCategoria(c.cat); porGrupo[g]=(porGrupo[g]||0)+c.total; });
+
+  const mercadoria=porGrupo['Mercadoria']||0;
+  const retiradas=porGrupo['Retiradas']||0;
+  const gruposOp=['Pessoal','Ocupação','Administrativa','Operacional','Impostos','Outros'];
+  const despesasOp=gruposOp.reduce(function(s,g){ return s+(porGrupo[g]||0); },0);
+
+  const faturamento=R.vendas;
+  const lucroBruto=faturamento-mercadoria;
+  const resultadoAntesRetiradas=lucroBruto-despesasOp;
+  const saldoFinal=resultadoAntesRetiradas-retiradas;
+
+  return {
+    faturamento:faturamento, mercadoria:mercadoria, lucroBruto:lucroBruto,
+    despesasOp:despesasOp, detalheOp:gruposOp.map(function(g){ return {grupo:g,valor:porGrupo[g]||0}; }).filter(function(x){ return x.valor>0; }),
+    resultadoAntesRetiradas:resultadoAntesRetiradas, retiradas:retiradas, saldoFinal:saldoFinal,
+    margemBruta: faturamento>0?(lucroBruto/faturamento*100):null,
+    margemLiquida: faturamento>0?(resultadoAntesRetiradas/faturamento*100):null
+  };
+}
+function linhaDRE(rot,valor,cor,negrito,pct,indentado){
+  return '<div class="dreLinha'+(negrito?' dreForte':'')+(indentado?' dreIndent':'')+'">'+
+    '<span>'+rot+'</span>'+
+    '<span class="dreVal" style="color:'+(cor||'var(--ink)')+'">'+brl(valor)+(pct!=null?' <em>'+pct.toFixed(0)+'%</em>':'')+'</span></div>';
+}
+// ============================================================
+//  RESUMO DO MÊS POR IA (chama a Edge Function já publicada)
+// ============================================================
+async function gerarResumoIA(){
+  const btn=document.getElementById('iaBtn');
+  const area=document.getElementById('iaResultado');
+  if(btn){ btn.textContent='Gerando…'; btn.disabled=true; }
+  if(area){ area.innerHTML='<div class="dica"><span class="girando">◜</span> Pensando no resumo do mês…</div>'; }
+
+  const hoje=new Date();
+  const D=montarDRE(hoje.getFullYear(), hoje.getMonth()+1);
+  let sit=null; try{ sit=situacaoRetirada(metaLucroPct); }catch(e){}
+
+  const payload={
+    mes: NOMES_MES[hoje.getMonth()]+'/'+hoje.getFullYear(),
+    faturamento: D.faturamento,
+    mercadoria_distribuidor: D.mercadoria,
+    lucro_bruto: D.lucroBruto,
+    margem_bruta_pct: D.margemBruta,
+    despesas_operacionais_total: D.despesasOp,
+    despesas_por_grupo: D.detalheOp,
+    resultado_antes_retiradas: D.resultadoAntesRetiradas,
+    margem_liquida_pct: D.margemLiquida,
+    retiradas_do_mes: D.retiradas,
+    saldo_final_do_mes: D.saldoFinal,
+    saldo_acumulado_total: sit?sit.saldoAcumulado:null,
+    meta_retirada_percentual: metaLucroPct,
+    ja_retirado_este_mes: sit?sit.jaRetirado:null
+  };
+
+  const s=Sessao.ler();
+  try{
+    const resp=await fetch(SUPABASE_URL+'/functions/v1/resumo-mensal',{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'apikey':SUPABASE_KEY,
+        'Authorization':'Bearer '+((s&&s.token)||SUPABASE_KEY)
+      },
+      body:JSON.stringify(payload)
+    });
+    const data=await resp.json();
+    if(!area){}
+    else if(data.erro){
+      area.innerHTML='<div class="dica" style="color:var(--rose);background:#FDECEC;border-radius:10px;padding:10px 12px">'+data.erro+'</div>';
+    }else if(data.texto){
+      area.innerHTML='<div class="cmpCard" style="margin-top:2px"><div style="font-size:13.5px;line-height:1.6">'+data.texto+'</div></div>';
+    }else{
+      area.innerHTML='<div class="dica" style="color:var(--rose)">Resposta inesperada da IA.</div>';
+    }
+  }catch(e){
+    if(area) area.innerHTML='<div class="dica" style="color:var(--rose)">Não consegui falar com a IA: '+e.message+'</div>';
+  }
+  if(btn){ btn.textContent='Gerar resumo do mês por IA'; btn.disabled=false; }
+}
+
+function abrirDRE(){
+  if(!podeFazer('relatorios')){ bloqueado('relatorios'); return; }
+  const hoje=new Date();
+  const D=montarDRE(hoje.getFullYear(),hoje.getMonth()+1);
+  const antMes=hoje.getMonth()===0?12:hoje.getMonth(), antAno=hoje.getMonth()===0?hoje.getFullYear()-1:hoje.getFullYear();
+  const Dant=montarDRE(antAno,antMes);
+  const vFat=variacao(D.faturamento,Dant.faturamento);
+  const vRes=variacao(D.resultadoAntesRetiradas,Dant.resultadoAntesRetiradas);
+  const positivo=D.resultadoAntesRetiradas>=0;
+
+  abrirFolha('DRE do mês',
+    '<div class="dica" style="margin-top:0">Demonstrativo simplificado: o caminho do faturamento até o que sobra de verdade.</div>'+
+
+    '<section class="cmpHero">'+
+      '<div class="cmpHeroRot">Resultado do mês (antes de retiradas)</div>'+
+      '<div class="cmpHeroVal" style="color:'+(positivo?'#fff':'#FFD9D5')+'">'+brl(D.resultadoAntesRetiradas)+'</div>'+
+      '<div class="cmpHeroSub">'+(D.margemLiquida!=null?D.margemLiquida.toFixed(1)+'% do faturamento':'—')+
+        ' <span class="cmpBadge" style="background:'+(vRes.pct>=0?'#1E7A55':'#8E1A15')+'">'+vRes.txt+' vs mês passado</span></div>'+
+    '</section>'+
+
+    '<div class="dreBloco">'+
+      linhaDRE('Faturamento (vendas)', D.faturamento, 'var(--emerald)', true)+
+      linhaDRE('(–) Mercadoria / Distribuidor', -D.mercadoria, 'var(--rose)')+
+      linhaDRE('(=) Lucro bruto', D.lucroBruto, null, true, D.margemBruta)+
+    '</div>'+
+
+    '<h2 class="sec" style="margin-top:12px">Despesas operacionais</h2>'+
+    '<div class="dreBloco">'+
+      (D.detalheOp.length?D.detalheOp.map(function(g){ return linhaDRE(g.grupo,-g.valor,'var(--rose)',false,null,true); }).join(''):'<div class="vazio">Nenhuma despesa categorizada este mês.</div>')+
+      linhaDRE('(=) Despesas operacionais', -D.despesasOp, 'var(--rose)', true)+
+    '</div>'+
+
+    '<div class="dreBloco" style="margin-top:8px">'+
+      linhaDRE('(=) Resultado antes de retiradas', D.resultadoAntesRetiradas, null, true, D.margemLiquida)+
+      linhaDRE('(–) Retiradas do mês', -D.retiradas, '#8A5A00')+
+      linhaDRE('(=) Saldo final do mês', D.saldoFinal, (D.saldoFinal>=0?'var(--emerald)':'var(--rose)'), true)+
+    '</div>'+
+
+    '<div class="dica" style="margin-top:10px">Comparado ao mês passado: faturamento '+vFat.txt+', resultado '+vRes.txt+'.</div>'+
+
+    '<button class="primario" id="iaBtn" style="margin-top:16px" onclick="gerarResumoIA()">Gerar resumo do mês por IA</button>'+
+    '<div id="iaResultado"></div>'
+  );
+}
+
+
 function abrirMetaLucro(){
   if(!podeFazer('relatorios')){ bloqueado('relatorios'); return; }
   const sit=situacaoRetirada(metaLucroPct);
@@ -1522,6 +1668,7 @@ function abrirMenu(){
     item(IC.contas,'Gerenciar categorias','Criar, renomear, excluir',"abrirGerenciarCategorias()")+
 
     '<div class="drSecao">Metas e Indicadores</div>'+
+    item(IC.rel,'DRE do mês','Faturamento até o que sobra',"abrirDRE()")+
     item(IC.rel,'Meta de retirada',metaLucroPct+'% do saldo disponível',"abrirMetaLucro()")+
     item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
 
