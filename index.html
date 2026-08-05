@@ -886,6 +886,71 @@ function abrirMetaLucro(){
   );
 }
 
+// ============================================================
+//  SAÍDAS POR CATEGORIA, MÊS A MÊS (o que faltava: não é só hoje x mês
+//  passado, é a categoria específica andando ao longo de vários meses)
+// ============================================================
+function categoriaPorMeses(categoria,qtdMeses){
+  const meses=seriesMeses(qtdMeses);
+  return meses.map(function(m){
+    const iv=limitesMes(m.ano,m.mes);
+    const valor=porCategoria('SAIDA',iv[0],iv[1]).filter(function(c){ return c.cat===categoria; })[0];
+    return {rot:m.rot, valor:valor?valor.total:0, atual:m.atual};
+  });
+}
+function abrirSaidasCategoriasMeses(){
+  const meses=seriesMeses(6);
+  const totais={};
+  meses.forEach(function(m){
+    const iv=limitesMes(m.ano,m.mes);
+    porCategoria('SAIDA',iv[0],iv[1]).forEach(function(c){ totais[c.cat]=(totais[c.cat]||0)+c.total; });
+  });
+  const cats=Object.keys(totais).sort(function(a,b){ return totais[b]-totais[a]; }).slice(0,10);
+
+  const linhas = cats.length ? cats.map(function(c){
+    const serie=categoriaPorMeses(c,6);
+    const atualV=serie[serie.length-1].valor, antV=serie[serie.length-2]?serie[serie.length-2].valor:0;
+    const v=variacao(atualV,antV);
+    const cor = v.pct===undefined ? 'var(--muted)' : (v.pct>0?'var(--rose)':'var(--emerald)');
+    return '<div class="item" style="cursor:pointer" onclick="verCategoriaMeses(\''+encodeURIComponent(c)+'\')">'+
+      '<div style="flex:1"><div style="font-size:14px;font-weight:500">'+c+'</div>'+
+      '<div style="font-size:11.5px;color:var(--muted)">total nos 6 meses: '+brl(totais[c])+'</div></div>'+
+      '<div style="text-align:right"><div class="val2">'+brl(atualV)+'</div>'+
+      '<div style="font-size:11px;color:'+cor+';margin-top:2px">'+v.txt+' vs mês passado</div></div></div>';
+  }).join('') : '<div class="vazio">Sem saídas categorizadas nos últimos meses.</div>';
+
+  abrirFolha('Saídas por categoria — 6 meses',
+    '<div class="dica" style="margin-top:0">Toque numa categoria pra ver ela mês a mês.</div>'+linhas);
+}
+function verCategoriaMeses(catEnc){
+  const cat=decodeURIComponent(catEnc);
+  const serie=categoriaPorMeses(cat,6);
+  const max=serie.reduce(function(m,x){ return Math.max(m,x.valor); },0);
+  const total=serie.reduce(function(s,x){ return s+x.valor; },0);
+  const comDados=serie.filter(function(x){ return x.valor>0; });
+  const media=comDados.length?total/comDados.length:0;
+
+  const barras=serie.map(function(m){
+    const h=max?Math.round(m.valor/max*100):0;
+    return '<div class="evCol'+(m.atual?' evAtual':'')+'">'+
+      '<div class="evBarras"><div class="evB" style="height:'+h+'%;background:var(--rose)" title="'+brl(m.valor)+'"></div></div>'+
+      '<div class="evRot">'+m.rot+'</div></div>';
+  }).join('');
+
+  const tabela=serie.slice().reverse().map(function(m){
+    return '<div class="evLinha"><span class="evMes">'+m.rot+'</span><strong class="evVal" style="color:var(--rose)">'+brl(m.valor)+'</strong></div>';
+  }).join('');
+
+  fecharFolha();
+  abrirFolha(cat,
+    '<div class="cmpCard"><div class="cmpCardTopo"><span>Média por mês (com movimento)</span></div>'+
+      '<div class="cmpCardVal" style="color:var(--rose)">'+brl(media)+'</div></div>'+
+    '<h2 class="sec" style="margin-top:14px">Últimos 6 meses</h2>'+
+    '<div class="evGrafico">'+barras+'</div>'+
+    tabela+
+    '<button class="btnS" style="width:100%;margin-top:12px" onclick="fecharFolha();abrirSaidasCategoriasMeses()">‹ Voltar pra todas as categorias</button>');
+}
+
 function abrirEvolucao(){
   const meses=seriesMeses(6);
   const comDados=meses.filter(function(m){ return m.ent>0||m.sai>0; });
@@ -938,6 +1003,7 @@ function abrirEvolucao(){
 
     '<div class="evLinha evCab"><span class="evMes">Mês</span><span class="evVal">Vendas</span><span class="evVal">Saídas</span><span class="evVal">Saldo</span></div>'+
     tabela+
+    '<button class="btnS" style="width:100%;margin-top:10px" onclick="fecharFolha();abrirSaidasCategoriasMeses()">Ver saídas por categoria, mês a mês</button>'+
 
     '<h2 class="sec" style="margin-top:14px">Indicadores</h2>'+
     '<div class="cmpCard"><div class="cmpCardTopo"><span>Média de vendas por mês</span></div>'+
