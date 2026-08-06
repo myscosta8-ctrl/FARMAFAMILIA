@@ -943,6 +943,89 @@ async function gerarResumoIA(){
   if(btn){ btn.textContent='Gerar resumo do mês por IA'; btn.disabled=false; }
 }
 
+// ============================================================
+//  VISÃO ANUAL (os 12 meses do ano civil, com navegação entre anos —
+//  preparada pra crescer conforme o histórico avança)
+// ============================================================
+function seriesAno(ano){
+  const hoje=new Date();
+  const inicioMesAtual=new Date(hoje.getFullYear(),hoje.getMonth(),1).getTime();
+  const lista=[];
+  for(let mes=1; mes<=12; mes++){
+    const R=resumoMes(ano,mes);
+    const inicioDoMes=new Date(ano,mes-1,1).getTime();
+    const futuro = inicioDoMes>inicioMesAtual;
+    lista.push({ano:ano, mes:mes, rot:NOMES_MES[mes-1],
+      vendas:R.vendas, sai:R.sai, saldo:R.saldo,
+      atual:(ano===hoje.getFullYear()&&mes===hoje.getMonth()+1),
+      futuro:futuro, semDados:(!futuro && R.vendas===0 && R.sai===0)});
+  }
+  return lista;
+}
+let anoVisaoSel=null;
+function abrirVisaoAnual(){
+  if(!podeFazer('relatorios')){ bloqueado('relatorios'); return; }
+  if(!anoVisaoSel) anoVisaoSel=new Date().getFullYear();
+  abrirFolha('Visão anual','<div id="vaCorpo"></div>', redesenharVisaoAnual);
+}
+function trocarAnoVisao(delta){
+  anoVisaoSel+=delta;
+  redesenharVisaoAnual();
+}
+function redesenharVisaoAnual(){
+  const alvo=document.getElementById('vaCorpo'); if(!alvo) return;
+  const ano=anoVisaoSel;
+  const meses=seriesAno(ano);
+  const comDados=meses.filter(function(m){ return !m.futuro && !m.semDados; });
+
+  const totalVendas=meses.reduce(function(s,m){ return s+m.vendas; },0);
+  const totalSaidas=meses.reduce(function(s,m){ return s+m.sai; },0);
+  const totalSaldo=totalVendas-totalSaidas;
+  const max=meses.reduce(function(m,x){ return Math.max(m,x.vendas,x.sai); },0);
+
+  const barras=meses.map(function(m){
+    if(m.futuro){
+      return '<div class="evCol"><div class="evBarras"></div><div class="evRot" style="opacity:.35">'+m.rot+'</div></div>';
+    }
+    const hV=max?Math.round(m.vendas/max*100):0;
+    const hS=max?Math.round(m.sai/max*100):0;
+    return '<div class="evCol'+(m.atual?' evAtual':'')+'">'+
+      '<div class="evBarras">'+
+        '<div class="evB evBv" style="height:'+hV+'%" title="Vendas: '+brl(m.vendas)+'"></div>'+
+        '<div class="evB evBs" style="height:'+hS+'%" title="Saídas: '+brl(m.sai)+'"></div>'+
+      '</div>'+
+      '<div class="evRot">'+m.rot+'</div></div>';
+  }).join('');
+
+  const tabela=meses.map(function(m){
+    if(m.futuro) return '<div class="evLinha" style="opacity:.4"><span class="evMes">'+m.rot+'</span><span class="evVal">—</span><span class="evVal">—</span><span class="evVal">—</span></div>';
+    const pos=m.saldo>=0;
+    return '<div class="evLinha'+(m.semDados?'':'')+'"><span class="evMes">'+m.rot+'</span>'+
+      '<span class="evVal" style="color:'+(m.semDados?'var(--muted)':'var(--emerald)')+'">'+(m.semDados?'—':brl(m.vendas))+'</span>'+
+      '<span class="evVal" style="color:'+(m.semDados?'var(--muted)':'var(--rose)')+'">'+(m.semDados?'—':brl(m.sai))+'</span>'+
+      '<strong class="evVal" style="color:'+(m.semDados?'var(--muted)':(pos?'var(--emerald)':'var(--rose)'))+'">'+(m.semDados?'—':brl(m.saldo))+'</strong></div>';
+  }).join('');
+
+  alvo.innerHTML=
+    '<div class="mesNav">'+
+      '<button onclick="trocarAnoVisao(-1)">‹</button>'+
+      '<span>'+ano+'</span>'+
+      '<button onclick="trocarAnoVisao(1)">›</button>'+
+    '</div>'+
+    '<section class="cmpHero">'+
+      '<div class="cmpHeroRot">Saldo do ano</div>'+
+      '<div class="cmpHeroVal">'+brl(totalSaldo)+'</div>'+
+      '<div class="cmpHeroSub">Vendas '+brl(totalVendas)+' · Saídas '+brl(totalSaidas)+'</div>'+
+    '</section>'+
+    '<div class="evGrafico" style="gap:2px;padding:12px 6px">'+barras+'</div>'+
+    '<div class="evLegenda"><span><i class="evPonto evBv"></i>Vendas</span><span><i class="evPonto evBs"></i>Saídas</span></div>'+
+    '<div class="evLinha evCab"><span class="evMes">Mês</span><span class="evVal">Vendas</span><span class="evVal">Saídas</span><span class="evVal">Saldo</span></div>'+
+    tabela+
+    (comDados.length<3
+      ? '<div class="dica" style="margin-top:10px">Ainda são poucos meses de histórico ('+comDados.length+'). Essa tela vai ficar mais reveladora conforme o ano for passando — os meses futuros aparecem apagados de propósito.</div>'
+      : '');
+}
+
 function abrirDRE(){
   if(!podeFazer('relatorios')){ bloqueado('relatorios'); return; }
   const hoje=new Date();
@@ -1670,6 +1753,7 @@ function abrirMenu(){
     '<div class="drSecao">Metas e Indicadores</div>'+
     item(IC.rel,'DRE do mês','Faturamento até o que sobra',"abrirDRE()")+
     item(IC.rel,'Meta de retirada',metaLucroPct+'% do saldo disponível',"abrirMetaLucro()")+
+    item(IC.rel,'Visão anual','Os 12 meses do ano',"abrirVisaoAnual()")+
     item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
 
     '<div class="drSecao">Contas</div>'+
@@ -2448,10 +2532,13 @@ function linhaSplitVenda(sp,escuro){
 }
 function vInicio(){
   const r=resumoVendas(), a=alertas();
+  const hoje=new Date();
+  const inicioMes=new Date(hoje.getFullYear(),hoje.getMonth(),1).getTime();
+  const fimMes=new Date(hoje.getFullYear(),hoje.getMonth()+1,1).getTime();
   let projRitmo='';
   try{
     const p=projecaoMes();
-    if(p.confiavel) projRitmo='<div style="font-size:10.5px;color:var(--muted);margin-top:3px">ritmo: '+brl(p.vendaProjetada)+'</div>';
+    if(p.confiavel) projRitmo='No ritmo atual, deve fechar em '+brl(p.vendaProjetada);
   }catch(e){}
   let al='';
   al+=cartaoMetaGastos();
@@ -2481,10 +2568,11 @@ function vInicio(){
       }).join('')
     : '<div class="vazio">Nenhum lançamento ainda.</div>';
   return '<div style="display:grid;gap:10px">'+
-      '<section class="hero"><div class="brilho"></div><div class="lbl">Venda de hoje</div><div class="val">'+brl(r.dia)+'</div>'+linhaSplitVenda(vendaPorOrigem(inicioDia(),inicioDia()+86400000),true)+'</section>'+
+      '<section class="hero"><div class="brilho"></div><div class="lbl">Venda do mês</div><div class="val">'+brl(r.mes)+'</div>'+linhaSplitVenda(vendaPorOrigem(inicioMes,fimMes),true)+
+        (projRitmo?'<div style="font-size:11px;color:#FFD9D5;margin-top:5px;position:relative">'+projRitmo+'</div>':'')+'</section>'+
       '<div class="duo">'+
-        '<div class="mini"><div class="l">Semana</div><div class="v">'+brl(r.semana)+'</div></div>'+
-        '<div class="mini" style="cursor:pointer" onclick="abrirVendasMes()"><div class="l">Mês</div><div class="v">'+brl(r.mes)+'</div>'+projRitmo+'</div>'+
+        '<div class="mini"><div class="l">Hoje</div><div class="v">'+brl(r.dia)+'</div></div>'+
+        '<div class="mini" style="cursor:pointer" onclick="abrirVendasMes()"><div class="l">Semana</div><div class="v">'+brl(r.semana)+'</div></div>'+
       '</div>'+
     '</div>'+
     '<h2 class="sec">Saldo total em caixa</h2>'+
