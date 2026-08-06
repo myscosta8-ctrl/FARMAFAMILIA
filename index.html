@@ -1747,7 +1747,7 @@ function abrirMenu(){
       item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
       '<div class="drSecao">Conta</div>'+
       item(IC.sair,'Sair do aplicativo','',"sair()")+
-      '<div class="drRodape">Farma Família · build 2026-08-06-6</div></div>';
+      '<div class="drRodape">Farma Família · build 2026-08-06-7</div></div>';
     document.body.appendChild(ov);
     requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
     return;
@@ -1760,12 +1760,6 @@ function abrirMenu(){
     '<div class="drSecao">Categorias</div>'+
     item(IC.rel,'Reclassificar categorias','Corrigir a categoria em massa',"abrirReclassificar()")+
     item(IC.contas,'Gerenciar categorias','Criar, renomear, excluir',"abrirGerenciarCategorias()")+
-
-    '<div class="drSecao">Metas e Indicadores</div>'+
-    item(IC.rel,'DRE do mês','Faturamento até o que sobra',"abrirDRE()")+
-    item(IC.rel,'Meta de retirada',metaLucroPct+'% do saldo disponível',"abrirMetaLucro()")+
-    item(IC.rel,'Visão anual','Os 12 meses do ano',"abrirVisaoAnual()")+
-    item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
 
     '<div class="drSecao">Contas</div>'+
     item(IC.relogio,'Contas de todo mês','Aluguel, luz, salário…',"abrirRecorrentes()")+
@@ -1784,7 +1778,7 @@ function abrirMenu(){
     item(IC.contas,'Lançamentos repetidos','Procura duplicidades',"conferirDuplicados()")+
     item(IC.baixar,'Exportar CSV','Planilha do período',"irPara('rel')")+
 
-    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-06-6</div>'+
+    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-06-7</div>'+
   '</div>';
   document.body.appendChild(ov);
   requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
@@ -2472,7 +2466,7 @@ function sair(){ if(!confirm('Sair do aplicativo?'))return; Sessao.limpar(); try
 //  ESTRUTURA
 // ============================================================
 let aba='inicio';
-const abas=[{id:'inicio',n:'Início',i:IC.inicio},{id:'caixa',n:'Caixa',i:IC.caixa},{id:'estoque',n:'Estoque',i:IC.estoque},{id:'contas',n:'Contas',i:IC.contas},{id:'rel',n:'Relatórios',i:IC.rel}];
+const abas=[{id:'inicio',n:'Início',i:IC.inicio},{id:'caixa',n:'Caixa',i:IC.caixa},{id:'gestao',n:'Gestão',i:IC.estoque},{id:'contas',n:'Contas',i:IC.contas},{id:'rel',n:'Relatórios',i:IC.rel}];
 
 function montarApp(){
   const s=Sessao.ler();
@@ -2513,12 +2507,12 @@ function render(){
   if(visaoSimples){ m.innerHTML=av+vSimples(); document.getElementById('fab').style.display='none'; return; }
   if(aba==='inicio')m.innerHTML=av+vInicio();
   else if(aba==='caixa')m.innerHTML=av+vCaixa();
-  else if(aba==='estoque')m.innerHTML=av+vEstoque();
+  else if(aba==='gestao')m.innerHTML=av+vGestao();
   else if(aba==='contas')m.innerHTML=av+vContas();
   else m.innerHTML=av+vRel();
-  document.getElementById('fab').style.display=(aba==='caixa'||aba==='estoque'||aba==='contas')?'grid':'none';
+  document.getElementById('fab').style.display=(aba==='caixa'||aba==='contas')?'grid':'none';
 }
-function acaoFab(){ if(!podeFazer('criar')){ bloqueado('criar'); return; } if(aba==='caixa')abrirMov(); else if(aba==='estoque')abrirProduto(); else if(aba==='contas')abrirConta(); }
+function acaoFab(){ if(!podeFazer('criar')){ bloqueado('criar'); return; } if(aba==='caixa')abrirMov(); else if(aba==='contas')abrirConta(); }
 async function recarregar(){ try{ await carregarTudo(); }catch(e){ console.error(e); } render(); }
 
 // ============================================================
@@ -2558,7 +2552,6 @@ function vInicio(){
     if(p.confiavel) projRitmo='No ritmo atual, deve fechar em '+brl(p.vendaProjetada);
   }catch(e){}
   let al='';
-  al+=cartaoMetaGastos();
   if(a.contas>0){
     const p=a.proxima;
     al+=alertaCard(IC.relogio,'var(--rose)','#FDECEC',
@@ -2568,8 +2561,6 @@ function vInicio(){
       'Próxima: '+p.desc, dm(p.venc)+(diasAte(p.venc)===0?' · vence hoje':diasAte(p.venc)<0?' · atrasada':' · em '+diasAte(p.venc)+' dia(s)'),
       brl(p.valor),"irPara('contas')",'Valor');
   }
-  if(a.baixo>0) al+=alertaCard(IC.pacote,'var(--amber)','#FEF3D9',a.baixo+' produtos em falta','Abaixo do estoque mínimo','',"irPara('estoque')");
-  if(a.venc>0) al+=alertaCard(IC.alerta,'var(--rose)','#FDECEC',a.venc+' produto(s) vencido(s)','Retirar do estoque','',"irPara('estoque')");
   if(!al) al='<div class="vazio">Tudo em dia. Nenhum alerta agora.</div>';
   // últimos lançamentos, do mais novo para o mais antigo
   const recentes=[...movimentos].sort(function(a,b){ return (b.criadoEm||b.ts)-(a.criadoEm||a.ts); }).slice(0,6);
@@ -2592,8 +2583,6 @@ function vInicio(){
         '<div class="mini" style="cursor:pointer" onclick="abrirVendasMes()"><div class="l">Semana</div><div class="v">'+brl(r.semana)+'</div></div>'+
       '</div>'+
     '</div>'+
-    '<h2 class="sec">Saldo total em caixa</h2>'+
-    cartaoSaldoAcumulado()+
     '<button class="btnP" style="justify-self:start" onclick="abrirVenda()">+ Lançar venda</button>'+
     '<h2 class="sec">Precisa de atenção</h2>'+al+
     '<h2 class="sec">Últimos lançamentos</h2>'+listaRecentes;
@@ -2996,6 +2985,23 @@ async function apagarMov(id){
 //  ESTOQUE
 // ============================================================
 let filtroEstoque='';
+// ============================================================
+//  GESTÃO — tudo que é indicador/planejamento, num lugar só
+//  (antes estava espalhado: parte no Início, parte no menu ☰)
+// ============================================================
+function vGestao(){
+  return '<h2 class="sec" style="margin-top:0">Saldo total em caixa</h2>'+
+    cartaoSaldoAcumulado()+
+    '<h2 class="sec">Meta de gastos do mês</h2>'+
+    (cartaoMetaGastos()||'<div class="vazio">Nenhum teto configurado. Defina em Menu → Administração.</div>')+
+    '<h2 class="sec">Indicadores</h2>'+
+    '<button class="btnS" style="width:100%" onclick="abrirDRE()">DRE do mês</button>'+
+    '<button class="btnS" style="width:100%;margin-top:8px" onclick="abrirMetaLucro()">Meta de retirada</button>'+
+    '<button class="btnS" style="width:100%;margin-top:8px" onclick="abrirEvolucao()">Evolução da farmácia (6 meses)</button>'+
+    '<button class="btnS" style="width:100%;margin-top:8px" onclick="abrirVisaoAnual()">Visão anual</button>'+
+    '<button class="btnS" style="width:100%;margin-top:8px" onclick="abrirSaidasCategoriasMeses()">Saídas por categoria, mês a mês</button>';
+}
+
 function vEstoque(){
   const f=(filtroEstoque||'').toLowerCase();
   const vis=produtos.filter(function(p){ return p.desc.toLowerCase().indexOf(f)>=0; });
