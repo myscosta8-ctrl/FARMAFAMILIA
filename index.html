@@ -1423,6 +1423,8 @@ function cartaoMetaGastos(){
   if(metaTeto==null||metaTeto<=0) return '';
   const c=comprometidoMes();
   const pct=Math.min(999,Math.round(c.total/metaTeto*100));
+  const pctSaiu=Math.min(100,Math.round(c.jaSaiu/metaTeto*100));
+  const pctVence=Math.max(0,Math.min(100-pctSaiu,Math.round(c.aindaVence/metaTeto*100)));
   const cor = pct<80?'var(--emerald)':pct<100?'#8A5A00':'var(--rose)';
   const bg  = pct<80?'#E7F6EF':pct<100?'#FDF1DC':'#FDECEC';
   const msg = pct<80?'Dentro do planejado'
@@ -1431,9 +1433,15 @@ function cartaoMetaGastos(){
   return '<div class="item" style="cursor:pointer" onclick="irPara(\'contas\')">'+
     '<div class="iconC" style="background:'+bg+';color:'+cor+'">'+IC.rel+'</div>'+
     '<div style="flex:1"><div style="font-size:14.5px;font-weight:600">'+msg+'</div>'+
-    '<div style="font-size:12px;color:var(--muted);margin-top:2px">'+brl(c.total)+' de '+brl(metaTeto)+' · já saiu '+brl(c.jaSaiu)+', falta vencer '+brl(c.aindaVence)+'</div>'+
-    '<div style="height:6px;background:#EEEAE9;border-radius:4px;margin-top:7px;overflow:hidden">'+
-      '<div style="width:'+Math.min(100,pct)+'%;height:100%;background:'+cor+'"></div></div></div>'+
+    '<div style="font-size:12px;color:var(--muted);margin-top:2px">'+brl(c.total)+' comprometidos de '+brl(metaTeto)+'</div>'+
+    '<div style="font-size:11px;color:var(--muted);margin-top:1px">'+
+      '<span style="color:'+cor+';font-weight:600">●</span> já saiu '+brl(c.jaSaiu)+
+      '  <span style="color:'+cor+';opacity:.45;font-weight:600">●</span> ainda vai vencer '+brl(c.aindaVence)+
+    '</div>'+
+    '<div style="height:6px;background:#EEEAE9;border-radius:4px;margin-top:7px;overflow:hidden;display:flex">'+
+      '<div style="width:'+pctSaiu+'%;height:100%;background:'+cor+'"></div>'+
+      '<div style="width:'+pctVence+'%;height:100%;background:'+cor+';opacity:.45"></div>'+
+    '</div></div>'+
     '<div class="val2" style="color:'+cor+'">'+pct+'%</div></div>';
 }
 
@@ -1739,7 +1747,7 @@ function abrirMenu(){
       item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
       '<div class="drSecao">Conta</div>'+
       item(IC.sair,'Sair do aplicativo','',"sair()")+
-      '<div class="drRodape">Farma Família · build 2026-08-06-5</div></div>';
+      '<div class="drRodape">Farma Família · build 2026-08-06-6</div></div>';
     document.body.appendChild(ov);
     requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
     return;
@@ -1776,7 +1784,7 @@ function abrirMenu(){
     item(IC.contas,'Lançamentos repetidos','Procura duplicidades',"conferirDuplicados()")+
     item(IC.baixar,'Exportar CSV','Planilha do período',"irPara('rel')")+
 
-    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-06-5</div>'+
+    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-06-6</div>'+
   '</div>';
   document.body.appendChild(ov);
   requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
