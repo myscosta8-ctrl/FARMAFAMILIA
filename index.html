@@ -56,6 +56,14 @@
 
   h2.sec{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-family:var(--g)}
   .item{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px}
+  .donut{width:130px;height:130px;border-radius:50%;display:grid;place-items:center}
+  .donutCenter{width:94px;height:94px;border-radius:50%;background:var(--card);display:grid;place-items:center;text-align:center;box-shadow:inset 0 0 0 1px var(--line)}
+  .donutPct{font-family:var(--g);font-size:25px;font-weight:700;line-height:1}
+  .donutSub{font-size:10px;color:var(--muted);line-height:1.25;margin-top:3px}
+  .metaLegLinha{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);padding:7px 0;border-bottom:1px solid var(--line)}
+  .metaLegLinha:last-child{border-bottom:none}
+  .metaLegPonto{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+  .metaLegVal{margin-left:auto;font-family:var(--g);font-weight:600}
   .item>div{min-width:0}
   .item>div div{overflow-wrap:break-word}
   .iconC{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex-shrink:0}
@@ -1422,27 +1430,47 @@ function comprometidoMes(){
 function cartaoMetaGastos(){
   if(metaTeto==null||metaTeto<=0) return '';
   const c=comprometidoMes();
-  const pct=Math.min(999,Math.round(c.total/metaTeto*100));
-  const pctSaiu=Math.min(100,Math.round(c.jaSaiu/metaTeto*100));
-  const pctVence=Math.max(0,Math.min(100-pctSaiu,Math.round(c.aindaVence/metaTeto*100)));
-  const cor = pct<80?'var(--emerald)':pct<100?'#8A5A00':'var(--rose)';
-  const bg  = pct<80?'#E7F6EF':pct<100?'#FDF1DC':'#FDECEC';
-  const msg = pct<80?'Dentro do planejado'
-    : pct<100?'Perto do teto do mês'
+  // Disponível = teto - comprometido. "Já saiu" já está DENTRO de "comprometido"
+  // (comprometido = já saiu + ainda vai vencer) — não pode ser somado de novo,
+  // senão o mesmo dinheiro é descontado duas vezes do disponível.
+  const disponivel = metaTeto - c.total;
+  const pctReal = c.total/metaTeto*100;
+  const pctBarra = Math.max(0,Math.min(100,Math.round(pctReal)));
+  const pctTxt = Math.round(pctReal);
+  const cor = pctReal<80?'var(--emerald)':pctReal<100?'#8A5A00':'var(--rose)';
+  const bg  = pctReal<80?'#E7F6EF':pctReal<100?'#FDF1DC':'#FDECEC';
+  const msg = pctReal<80?'Dentro do planejado'
+    : pctReal<100?'Perto do teto do mês'
     : 'Passou do teto planejado para o mês';
-  return '<div class="item" style="cursor:pointer" onclick="irPara(\'contas\')">'+
-    '<div class="iconC" style="background:'+bg+';color:'+cor+'">'+IC.rel+'</div>'+
-    '<div style="flex:1"><div style="font-size:14.5px;font-weight:600">'+msg+'</div>'+
-    '<div style="font-size:12px;color:var(--muted);margin-top:2px">'+brl(c.total)+' comprometidos de '+brl(metaTeto)+'</div>'+
-    '<div style="font-size:11px;color:var(--muted);margin-top:1px">'+
-      '<span style="color:'+cor+';font-weight:600">●</span> já saiu '+brl(c.jaSaiu)+
-      '  <span style="color:'+cor+';opacity:.45;font-weight:600">●</span> ainda vai vencer '+brl(c.aindaVence)+
+
+  return '<div class="item" style="cursor:pointer;flex-direction:column;align-items:stretch" onclick="irPara(\'contas\')">'+
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">'+
+      '<div class="iconC" style="background:'+bg+';color:'+cor+'">'+IC.rel+'</div>'+
+      '<div style="flex:1"><div style="font-size:14.5px;font-weight:600">'+msg+'</div>'+
+      '<div style="font-size:11.5px;color:var(--muted)">Acompanhe os gastos do mês</div></div>'+
     '</div>'+
-    '<div style="height:6px;background:#EEEAE9;border-radius:4px;margin-top:7px;overflow:hidden;display:flex">'+
-      '<div style="width:'+pctSaiu+'%;height:100%;background:'+cor+'"></div>'+
-      '<div style="width:'+pctVence+'%;height:100%;background:'+cor+';opacity:.45"></div>'+
-    '</div></div>'+
-    '<div class="val2" style="color:'+cor+'">'+pct+'%</div></div>';
+
+    '<div style="display:flex;justify-content:center;margin-bottom:16px">'+
+      '<div class="donut" style="background:conic-gradient('+cor+' 0% '+pctBarra+'%, #EEEAE9 '+pctBarra+'% 100%)">'+
+        '<div class="donutCenter"><div class="donutPct" style="color:'+cor+'">'+pctTxt+'%</div><div class="donutSub">do teto<br/>utilizado</div></div>'+
+      '</div>'+
+    '</div>'+
+
+    '<div>'+
+      '<div class="metaLegLinha"><span class="metaLegPonto" style="background:'+cor+'"></span>Teto máximo<span class="metaLegVal">'+brl(metaTeto)+'</span></div>'+
+      '<div class="metaLegLinha"><span class="metaLegPonto" style="background:'+cor+';opacity:.65"></span>Comprometido<span class="metaLegVal">'+brl(c.total)+'</span></div>'+
+      '<div class="metaLegLinha"><span class="metaLegPonto" style="background:'+cor+';opacity:.35"></span>Já saiu<span class="metaLegVal">'+brl(c.jaSaiu)+'</span></div>'+
+    '</div>'+
+
+    '<div style="text-align:center;margin-top:6px;padding-top:12px;border-top:1px solid var(--line)">'+
+      '<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">Disponível</div>'+
+      '<div style="font-size:20px;font-weight:700;font-family:var(--g);color:'+(disponivel>=0?'var(--emerald)':'var(--rose)')+'">'+brl(disponivel)+'</div>'+
+    '</div>'+
+
+    '<div style="height:6px;background:#EEEAE9;border-radius:4px;margin-top:12px;overflow:hidden">'+
+      '<div style="width:'+pctBarra+'%;height:100%;background:'+cor+'"></div></div>'+
+    '<div style="text-align:center;font-size:11px;color:var(--muted);margin-top:6px">Total utilizado: '+brl(c.total)+' de '+brl(metaTeto)+'</div>'+
+  '</div>';
 }
 
 async function salvarMetaGastos(remover){
@@ -1747,7 +1775,7 @@ function abrirMenu(){
       item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
       '<div class="drSecao">Conta</div>'+
       item(IC.sair,'Sair do aplicativo','',"sair()")+
-      '<div class="drRodape">Farma Família · build 2026-08-06-7</div></div>';
+      '<div class="drRodape">Farma Família · build 2026-08-06-8</div></div>';
     document.body.appendChild(ov);
     requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
     return;
@@ -1778,7 +1806,7 @@ function abrirMenu(){
     item(IC.contas,'Lançamentos repetidos','Procura duplicidades',"conferirDuplicados()")+
     item(IC.baixar,'Exportar CSV','Planilha do período',"irPara('rel')")+
 
-    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-06-7</div>'+
+    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-06-8</div>'+
   '</div>';
   document.body.appendChild(ov);
   requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
