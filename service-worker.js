@@ -7,7 +7,7 @@
 //  O cache serve só para o app continuar abrindo sem internet.
 // ============================================================
 
-const CACHE = "farmafamilia-v1";
+const CACHE = "farmafamilia-v2";
 const ARQUIVOS = [
   "./",
   "./index.html",
@@ -37,7 +37,7 @@ self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
 
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: "no-store" })
       .then((resp) => {
         // guarda a versão mais recente no cache
         const copia = resp.clone();
