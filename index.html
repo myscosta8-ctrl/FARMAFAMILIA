@@ -25,9 +25,10 @@
     --muted:#6B5A58;--line:#E8E0DE;
     --g:'Space Grotesk',sans-serif;--i:'Inter',sans-serif;
   }
-  *{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
-  body{font-family:var(--i);color:var(--ink);background:var(--paper)}
-  #app{max-width:440px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;position:relative}
+  *{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent;min-width:0}
+  html,body{overflow-x:hidden;max-width:100%}
+  body{font-family:var(--i);color:var(--ink);background:var(--paper);word-break:break-word;overflow-wrap:break-word}
+  #app{max-width:440px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;position:relative;overflow-x:hidden}
   header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:linear-gradient(135deg,var(--pineSoft),var(--pine));color:#fff}
   .marca{width:40px;height:40px;border-radius:11px;background:#fff;display:grid;place-items:center;overflow:hidden;flex-shrink:0}
   .marca img{width:100%;height:100%;object-fit:cover}
@@ -55,6 +56,8 @@
 
   h2.sec{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-family:var(--g)}
   .item{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px}
+  .item>div{min-width:0}
+  .item>div div{overflow-wrap:break-word}
   .iconC{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex-shrink:0}
   .iconC svg{width:18px;height:18px}
   .val2{font-family:var(--g);font-weight:700}
@@ -2485,7 +2488,13 @@ function montarApp(){
     '</button>';
   render();
 }
-function irPara(id){ aba=id; render(); }
+function irPara(id){
+  // Toda vez que entra na aba Caixa vindo de outro lugar, mostra o dia de
+  // hoje de novo — sem isso, se o app ficar aberto passando da meia-noite,
+  // ou se você tiver visto outro dia antes, ela ficava presa na data velha.
+  if(id==='caixa') caixaData=hojeISO();
+  aba=id; render();
+}
 function render(){
   const h=document.getElementById('hoje'); if(!h) return;
   h.textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});
