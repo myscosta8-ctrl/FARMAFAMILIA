@@ -26,9 +26,9 @@
     --g:'Space Grotesk',sans-serif;--i:'Inter',sans-serif;
   }
   *{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent;min-width:0}
-  html,body{overflow-x:hidden;max-width:100%}
+  html,body{overflow:hidden;max-width:100%}
   body{font-family:var(--i);color:var(--ink);background:var(--paper);word-break:break-word;overflow-wrap:break-word}
-  #app{max-width:440px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;position:relative;overflow-x:hidden}
+  #app{max-width:440px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;position:relative}
   header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:linear-gradient(135deg,var(--pineSoft),var(--pine));color:#fff}
   .marca{width:40px;height:40px;border-radius:11px;background:#fff;display:grid;place-items:center;overflow:hidden;flex-shrink:0}
   .marca img{width:100%;height:100%;object-fit:cover}
@@ -1739,7 +1739,7 @@ function abrirMenu(){
       item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
       '<div class="drSecao">Conta</div>'+
       item(IC.sair,'Sair do aplicativo','',"sair()")+
-      '<div class="drRodape">Farma Família · build 2026-08-06-1</div></div>';
+      '<div class="drRodape">Farma Família · build 2026-08-06-2</div></div>';
     document.body.appendChild(ov);
     requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
     return;
@@ -1776,7 +1776,7 @@ function abrirMenu(){
     item(IC.contas,'Lançamentos repetidos','Procura duplicidades',"conferirDuplicados()")+
     item(IC.baixar,'Exportar CSV','Planilha do período',"irPara('rel')")+
 
-    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-06-1</div>'+
+    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-06-2</div>'+
   '</div>';
   document.body.appendChild(ov);
   requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
