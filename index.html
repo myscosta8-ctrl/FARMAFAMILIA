@@ -1779,7 +1779,7 @@ function abrirMenu(){
       item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
       '<div class="drSecao">Conta</div>'+
       item(IC.sair,'Sair do aplicativo','',"sair()")+
-      '<div class="drRodape">Farma Família · build 2026-08-07-1</div></div>';
+      '<div class="drRodape">Farma Família · build 2026-08-07-3</div></div>';
     document.body.appendChild(ov);
     requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
     return;
@@ -1810,7 +1810,7 @@ function abrirMenu(){
     item(IC.contas,'Lançamentos repetidos','Procura duplicidades',"conferirDuplicados()")+
     item(IC.baixar,'Exportar CSV','Planilha do período',"irPara('rel')")+
 
-    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-07-1</div>'+
+    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-07-3</div>'+
   '</div>';
   document.body.appendChild(ov);
   requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
@@ -2411,13 +2411,13 @@ function dataDoFator(fator){
 function decodificarLinha(linha){
   const d=String(linha).replace(/\D/g,''); if(d.length!==47)return null;
   const c=parseInt(d.slice(37,47),10);
-  return { valor: isNaN(c)?null:c/100, vencimento: dataDoFator(parseInt(d.slice(33,37),10)) };
+  return { valor: isNaN(c)?null:c/100, vencimento: dataDoFator(parseInt(d.slice(33,37),10)), digitos:d };
 }
 // Código de barras do boleto (44 dígitos)
 function decodificarCodigoBarras(cb){
   const d=String(cb).replace(/\D/g,''); if(d.length!==44)return null;
   const c=parseInt(d.slice(9,19),10);
-  return { valor: isNaN(c)?null:c/100, vencimento: dataDoFator(parseInt(d.slice(5,9),10)) };
+  return { valor: isNaN(c)?null:c/100, vencimento: dataDoFator(parseInt(d.slice(5,9),10)), digitos:d };
 }
 
 // Lê a FOTO do boleto e extrai valor e vencimento pelo código de barras.
@@ -3225,7 +3225,7 @@ function abrirConta(){
   const boleto = contaAba==='BOLETO';
   const receber = contaAba==='RECEBER';
   const despesa = contaAba==='DESPESA';
-  despCat='Frete'; contaJaPaga=false; contaOrigemPag=null;
+  despCat='Frete'; contaJaPaga=false; contaOrigemPag=null; rascunhoAtualId=null;
   const titulo = boleto?'Adicionar boleto' : despesa?'Adicionar despesa' : 'Adicionar conta a receber';
   abrirFolha(titulo,
     (boleto?'<button type="button" class="foto" onclick="abrirScannerBoleto()">'+IC.camera+' Ler código de barras</button>'+
@@ -3260,6 +3260,27 @@ function abrirConta(){
     });
 }
 let contaJaPaga=false, contaOrigemPag=null;
+// Assim que a leitura de um boleto der certo, salva na hora um rascunho
+// pendente — mesmo que o usuário feche o app sem terminar de preencher,
+// o valor, vencimento e a linha completa já ficam guardados. Se ler de
+// novo (2ª tentativa), atualiza esse mesmo rascunho em vez de duplicar.
+let rascunhoAtualId=null;
+async function salvarRascunhoBoleto(valor,vencimentoISO,linhaCompleta,doc){
+  const payload={
+    tipo:'PAGAR', origem:'BOLETO', categoria:null,
+    descricao:'Boleto lido — revisar antes de confirmar',
+    valor:valor, vencimento:vencimentoISO, status:'PENDENTE',
+    linha_digitavel:linhaCompleta||null, documento:doc||null
+  };
+  try{
+    if(rascunhoAtualId){
+      await api('contas?id=eq.'+rascunhoAtualId,{method:'PATCH',body:JSON.stringify(payload)});
+    }else{
+      const resp=await api('contas',{method:'POST',body:JSON.stringify(payload)});
+      if(resp&&resp[0]) rascunhoAtualId=resp[0].id;
+    }
+  }catch(e){ console.error('Não consegui salvar o rascunho do boleto:',e); }
+}
 function escolherContaOrigem(o){
   contaOrigemPag=(contaOrigemPag===o)?null:o;
   const el=document.getElementById('cOrigemChips'); if(el) el.outerHTML=chipsOrigem('cOrigemChips',contaOrigemPag,'escolherContaOrigem');
@@ -3302,7 +3323,7 @@ async function salvarConta(continuar){
   if(rep && !confirmarRepetido(rep)) return;
   const b=document.getElementById('cBtn'); b.textContent='Salvando…'; b.disabled=true;
   try{
-    const criadaResp=await api('contas',{method:'POST',body:JSON.stringify({
+    const payloadConta={
       tipo: contaAba==='RECEBER'?'RECEBER':'PAGAR',
       origem: boleto?'BOLETO':'MANUAL',
       categoria: despesa?despCat:null,
@@ -3312,11 +3333,21 @@ async function salvarConta(continuar){
       data_baixa: contaJaPaga?montarDataHora(dataPag):null,
       linha_digitavel:(el&&el.value.replace(/\D/g,''))||null,
       documento: ultimoCodigoLido?documentoDe(ultimoCodigoLido):null
-    })});
+    };
+    // Se já existe um rascunho salvo automaticamente na leitura, completa
+    // ele em vez de criar uma conta nova (evita duplicar o mesmo boleto).
+    let idFinal;
+    if(boleto && rascunhoAtualId){
+      await api('contas?id=eq.'+rascunhoAtualId,{method:'PATCH',body:JSON.stringify(payloadConta)});
+      idFinal=rascunhoAtualId;
+    }else{
+      const criadaResp=await api('contas',{method:'POST',body:JSON.stringify(payloadConta)});
+      idFinal=(criadaResp&&criadaResp[0])?criadaResp[0].id:null;
+    }
+    rascunhoAtualId=null;
     // se já foi paga, lança no caixa junto e deixa os dois ligados
     if(contaJaPaga){
-      // usa o id devolvido pela própria criação (evita pegar a conta de outra pessoa)
-      const idNova=(criadaResp&&criadaResp[0])?criadaResp[0].id:null;
+      const idNova=idFinal;
       await api('movimentos',{method:'POST',body:JSON.stringify({
         tipo: contaAba==='RECEBER'?'ENTRADA':'SAIDA',
         categoria: despesa?despCat:(boleto?'Distribuidor':'Outros'),
@@ -3371,7 +3402,7 @@ async function abrirScannerBoleto(){
 
   try{
     scannerStream=await navigator.mediaDevices.getUserMedia({
-      video:{ facingMode:{ideal:'environment'}, width:{ideal:1280}, height:{ideal:720} }
+      video:{ facingMode:{ideal:'environment'}, width:{ideal:720}, height:{ideal:1280} }
     });
   }catch(e){
     pararScanner();
@@ -3445,7 +3476,10 @@ function aplicarLeitura(r,digitos){
   if(r.valor!=null){ porValorNoCampo('cv',r.valor); previa('cv','cPrev'); }
   if(r.vencimento){ const cvc=document.getElementById('cvenc'); if(cvc) cvc.value=r.vencimento.toISOString().slice(0,10); }
   const cl=document.getElementById('cl');
-  if(cl && digitos && digitos.length===47) cl.value=digitos;
+  if(cl && digitos){
+    if(digitos.length===47) cl.value=digitos;
+    else if(digitos.length===44){ const convertida=barrasParaLinha(digitos); if(convertida) cl.value=convertida; }
+  }
 
   // guarda o código de barras (converte da linha, se for o caso)
   let cb=null;
@@ -3460,6 +3494,11 @@ function aplicarLeitura(r,digitos){
     const r2=reconhecerBeneficiario(cb);
     const cd=document.getElementById('cd');
     if(r2 && cd && !cd.value){ cd.value=r2.nome; extra+=' · '+r2.nome; }
+    // Segurança: salva um rascunho pendente na hora, pra nunca perder o
+    // número mesmo que o formulário seja fechado sem terminar.
+    if(contaAba==='BOLETO' && r.valor!=null && r.vencimento){
+      salvarRascunhoBoleto(r.valor, r.vencimento.toISOString().slice(0,10), cl?cl.value:null, doc);
+    }
   }
   const aviso=document.getElementById('cFoto');
   if(aviso){
@@ -3477,7 +3516,7 @@ async function fotoBoleto(ev){
   if(aviso){ aviso.innerHTML='<span class="girando">◜</span> Lendo o boleto…'; aviso.style.color='var(--muted)'; }
   try{
     const r=await lerBoletoDaFoto(arq);
-    aplicarLeitura(r,null);
+    aplicarLeitura(r,r.digitos||null);
   }catch(e){
     if(aviso){ aviso.textContent=e.message; aviso.style.color='var(--rose)'; }
   }
@@ -3489,6 +3528,35 @@ function linhaParaBarras(l){
   const d=String(l).replace(/\D/g,'');
   if(d.length!==47) return null;
   return d.slice(0,4)+d[32]+d.slice(33,47)+d.slice(4,9)+d.slice(10,20)+d.slice(21,31);
+}
+// Dígito verificador módulo 10 (usado nos 3 primeiros campos da linha digitável)
+function dvMod10(digitos){
+  let soma=0, mult=2;
+  for(let i=digitos.length-1;i>=0;i--){
+    let p=parseInt(digitos[i],10)*mult;
+    if(p>9) p=Math.floor(p/10)+(p%10);
+    soma+=p;
+    mult = mult===2?1:2;
+  }
+  const resto=soma%10;
+  return resto===0?0:10-resto;
+}
+// Caminho inverso do linhaParaBarras: reconstrói a linha digitável (47) a
+// partir do código de barras (44) — é o que a câmera lê na maioria das
+// vezes. Sem isso, só o "nº" curto (Nosso Número) ficava salvo, e a linha
+// completa nunca era gravada nos boletos lidos por foto/câmera.
+function barrasParaLinha(cb){
+  const d=String(cb).replace(/\D/g,'');
+  if(d.length!==44) return null;
+  const c1base=d.slice(0,4)+d.slice(19,24);
+  const c1=c1base+dvMod10(c1base);
+  const c2base=d.slice(24,34);
+  const c2=c2base+dvMod10(c2base);
+  const c3base=d.slice(34,44);
+  const c3=c3base+dvMod10(c3base);
+  const c4=d.slice(4,5);
+  const c5=d.slice(5,19);
+  return c1+c2+c3+c4+c5;
 }
 // Confere o dígito verificador geral do boleto (módulo 11)
 function dvBarrasOk(cb){
