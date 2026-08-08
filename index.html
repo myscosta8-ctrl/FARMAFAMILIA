@@ -222,11 +222,12 @@
   .btnExcluir{width:100%;background:transparent;color:var(--rose);border:1px solid #F0C4CB;border-radius:12px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--i);margin-top:10px}
   .import{display:flex;align-items:center;justify-content:center;gap:10px;background:var(--amberSoft);border:1px dashed var(--pineSoft);border-radius:12px;padding:13px;font-size:13.5px;font-weight:600;color:var(--pine);cursor:pointer;width:100%}
   .import svg{width:18px;height:18px}
-  .scanner{position:fixed;inset:0;background:#000;z-index:100;display:flex;align-items:center;justify-content:center}
+  .scanner{position:fixed;inset:0;background:#000;z-index:100;overflow:hidden}
+  .scGiro{position:absolute;top:50%;left:50%;width:100vh;height:100vw;transform:translate(-50%,-50%) rotate(90deg);display:flex;align-items:center;justify-content:center}
   .scanner video{width:100%;height:100%;object-fit:cover}
-  .scMira{position:absolute;left:8%;right:8%;height:60%;max-height:420px;border:3px solid #fff;border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.45)}
-  .scAviso{position:absolute;bottom:110px;left:0;right:0;text-align:center;color:#fff;font-size:14px;font-weight:600;text-shadow:0 1px 4px #000}
-  .scFechar{position:absolute;bottom:40px;left:50%;transform:translateX(-50%);background:#fff;color:var(--ink);border:none;border-radius:12px;padding:12px 26px;font-size:15px;font-weight:600;font-family:var(--i);cursor:pointer}
+  .scMira{position:absolute;left:6%;right:6%;height:46%;max-height:340px;border:3px solid #fff;border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.45)}
+  .scAviso{position:absolute;bottom:70px;left:0;right:0;text-align:center;color:#fff;font-size:14px;font-weight:600;text-shadow:0 1px 4px #000}
+  .scFechar{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:#fff;color:var(--ink);border:none;border-radius:12px;padding:12px 26px;font-size:15px;font-weight:600;font-family:var(--i);cursor:pointer}
   .fotoAlt{display:block;text-align:center;font-size:12.5px;color:var(--muted);text-decoration:underline;margin-top:8px;cursor:pointer}
   .foto{display:flex;align-items:center;justify-content:center;gap:10px;background:var(--pine);color:#fff;border-radius:12px;padding:13px;font-size:14.5px;font-weight:600;cursor:pointer;width:100%;margin-bottom:2px}
   .foto svg{width:19px;height:19px;vertical-align:-4px;margin-right:2px}
@@ -1779,7 +1780,7 @@ function abrirMenu(){
       item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
       '<div class="drSecao">Conta</div>'+
       item(IC.sair,'Sair do aplicativo','',"sair()")+
-      '<div class="drRodape">Farma Família · build 2026-08-07-3</div></div>';
+      '<div class="drRodape">Farma Família · build 2026-08-07-4</div></div>';
     document.body.appendChild(ov);
     requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
     return;
@@ -1810,7 +1811,7 @@ function abrirMenu(){
     item(IC.contas,'Lançamentos repetidos','Procura duplicidades',"conferirDuplicados()")+
     item(IC.baixar,'Exportar CSV','Planilha do período',"irPara('rel')")+
 
-    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-07-3</div>'+
+    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-07-4</div>'+
   '</div>';
   document.body.appendChild(ov);
   requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
@@ -3394,15 +3395,17 @@ async function abrirScannerBoleto(){
   }
   const ov=document.createElement('div');
   ov.className='scanner'; ov.id='scanner';
-  ov.innerHTML='<video id="scVideo" playsinline muted></video>'+
-    '<div class="scMira"></div>'+
-    '<div class="scAviso">Aponte para o código de barras<br><small style="font-weight:400;opacity:.85">funciona na vertical ou na horizontal</small></div>'+
-    '<button class="scFechar" onclick="pararScanner()">Cancelar</button>';
+  ov.innerHTML='<div class="scGiro">'+
+      '<video id="scVideo" playsinline muted></video>'+
+      '<div class="scMira"></div>'+
+      '<div class="scAviso">Ler código de barras<br><small style="font-weight:400;opacity:.85">encaixe a faixa de barras dentro do quadro</small></div>'+
+      '<button class="scFechar" onclick="pararScanner()">Cancelar</button>'+
+    '</div>';
   document.body.appendChild(ov);
 
   try{
     scannerStream=await navigator.mediaDevices.getUserMedia({
-      video:{ facingMode:{ideal:'environment'}, width:{ideal:720}, height:{ideal:1280} }
+      video:{ facingMode:{ideal:'environment'}, width:{ideal:1280}, height:{ideal:720} }
     });
   }catch(e){
     pararScanner();
