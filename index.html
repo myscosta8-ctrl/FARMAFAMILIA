@@ -1780,7 +1780,7 @@ function abrirMenu(){
       item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
       '<div class="drSecao">Conta</div>'+
       item(IC.sair,'Sair do aplicativo','',"sair()")+
-      '<div class="drRodape">Farma Família · build 2026-08-07-4</div></div>';
+      '<div class="drRodape">Farma Família · build 2026-08-08-1</div></div>';
     document.body.appendChild(ov);
     requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
     return;
@@ -1811,7 +1811,7 @@ function abrirMenu(){
     item(IC.contas,'Lançamentos repetidos','Procura duplicidades',"conferirDuplicados()")+
     item(IC.baixar,'Exportar CSV','Planilha do período',"irPara('rel')")+
 
-    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-07-4</div>'+
+    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-08-1</div>'+
   '</div>';
   document.body.appendChild(ov);
   requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
@@ -1920,6 +1920,7 @@ async function corrigirAuditoria(dadosEnc){
       for(let i=0;i<movs.length;i++) await api('movimentos?id=eq.'+movs[i].id,{method:'PATCH',body:JSON.stringify({descricao:d.para})});
       for(let i=0;i<cts.length;i++) await api('contas?id=eq.'+cts[i].id,{method:'PATCH',body:JSON.stringify({descricao:d.para})});
     }
+    await registrar('EDITOU','Auditoria', d.tipo==='unificar'?('Unificou "'+d.de+'" em "'+d.para+'"'):('Correção: '+d.tipo), null);
     await recarregar();
     fecharFolha(); abrirAuditoria();
   }catch(e){ alert(e.message); }
@@ -2050,6 +2051,7 @@ async function aplicarCategoriaGrupo(cat){
     for(let i=0;i<alvosContas.length;i++){
       await api('contas?id=eq.'+alvosContas[i].id,{method:'PATCH',body:JSON.stringify({categoria:cat})});
     }
+    await registrar('EDITOU','Categoria','Reclassificou "'+grupoAlvo+'" como "'+cat+'"',null,{lancamentos:alvos.length,contas:alvosContas.length});
     fecharFolha(); await recarregar();
     alert('Pronto: '+alvos.length+' lançamento(s) e '+alvosContas.length+' conta(s) como "'+cat+'".');
   }catch(e){ alert(e.message); }
@@ -2855,6 +2857,7 @@ async function salvarVenda(){
       valor_dinheiro: sp.dinheiro>0?sp.dinheiro:null,
       valor_eletronico: sp.eletronico>0?sp.eletronico:null
     })});
+    await registrar('CRIOU','Venda','Venda',sp.total);
     fecharFolha(); await recarregar();
   }catch(e){ alert(e.message); b.textContent='Registrar venda'; b.disabled=false; }
 }
