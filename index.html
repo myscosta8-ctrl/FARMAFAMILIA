@@ -223,7 +223,7 @@
   .import{display:flex;align-items:center;justify-content:center;gap:10px;background:var(--amberSoft);border:1px dashed var(--pineSoft);border-radius:12px;padding:13px;font-size:13.5px;font-weight:600;color:var(--pine);cursor:pointer;width:100%}
   .import svg{width:18px;height:18px}
   .scanner{position:fixed;inset:0;background:#000;z-index:100;overflow:hidden}
-  .scGiro{position:absolute;top:50%;left:50%;width:100vh;height:100vw;transform:translate(-50%,-50%) rotate(90deg)}
+  .scGiro{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(90deg)}
   .scanner video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
   .scMira{position:absolute;left:6%;right:6%;top:50%;height:70%;max-height:520px;transform:translateY(-50%);border:3px solid #fff;border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.45)}
   .scAviso{position:absolute;bottom:70px;left:0;right:0;text-align:center;color:#fff;font-size:14px;font-weight:600;text-shadow:0 1px 4px #000}
@@ -1782,7 +1782,7 @@ function abrirMenu(){
       item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
       '<div class="drSecao">Conta</div>'+
       item(IC.sair,'Sair do aplicativo','',"sair()")+
-      '<div class="drRodape">Farma Família · build 2026-08-08-4</div></div>';
+      '<div class="drRodape">Farma Família · build 2026-08-08-5</div></div>';
     document.body.appendChild(ov);
     requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
     return;
@@ -1813,7 +1813,7 @@ function abrirMenu(){
     item(IC.contas,'Lançamentos repetidos','Procura duplicidades',"conferirDuplicados()")+
     item(IC.baixar,'Exportar CSV','Planilha do período',"irPara('rel')")+
 
-    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-08-4</div>'+
+    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-08-5</div>'+
   '</div>';
   document.body.appendChild(ov);
   requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
@@ -3422,6 +3422,7 @@ async function abrirScannerBoleto(){
   const video=document.getElementById('scVideo');
   if(!video){ pararScanner(); return; }
   video.srcObject=scannerStream;
+  dimensionarScGiro();
   aplicarGiroCamera();
   try{ await video.play(); }catch(e){}
 
@@ -3487,6 +3488,16 @@ function girarCamera(){
   try{ localStorage.setItem('farmafamilia_giroCamera', String(atual)); }catch(e){}
   aplicarGiroCamera();
 }
+// Mede a tela em pixels de verdade (não em vh/vw — essas unidades variam
+// no celular conforme a barra de endereço aparece ou some, e foi isso que
+// deixava sobrar tarja preta em cima e embaixo da câmera).
+function dimensionarScGiro(){
+  const g=document.querySelector('.scGiro');
+  if(!g) return;
+  g.style.width=window.innerHeight+'px';
+  g.style.height=window.innerWidth+'px';
+}
+window.addEventListener('resize', function(){ if(document.getElementById('scanner')) dimensionarScGiro(); });
 function aplicarGiroCamera(){
   let atual=0;
   try{ atual=parseInt(localStorage.getItem('farmafamilia_giroCamera')||'0',10)||0; }catch(e){}
