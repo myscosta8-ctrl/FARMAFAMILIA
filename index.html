@@ -1427,10 +1427,13 @@ function comprometidoMes(){
   const fim=new Date(hoje.getFullYear(),hoje.getMonth()+1,1).getTime();
   const jaSaiu=movimentos.filter(function(m){ return m.tipo==='SAIDA'&&m.ts>=ini&&m.ts<fim; })
     .reduce(function(s,m){ return s+m.valor; },0);
+  // Tudo que ainda está pendente e vence até o fim deste mês — inclui contas
+  // atrasadas de meses anteriores, pra bater exatamente com o painel "Neste
+  // mês" da aba Contas (um boleto vencido ainda é dinheiro que vai sair).
   const aindaVence=contas.filter(function(c){
     if(c.tipo!=='PAGAR'||c.status==='PAGO') return false;
     const t=new Date(c.venc+'T12:00:00').getTime();
-    return t>=ini&&t<fim;
+    return t<fim;
   }).reduce(function(s,c){ return s+c.valor; },0);
   return {jaSaiu:jaSaiu, aindaVence:aindaVence, total:jaSaiu+aindaVence};
 }
@@ -1782,7 +1785,7 @@ function abrirMenu(){
       item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
       '<div class="drSecao">Conta</div>'+
       item(IC.sair,'Sair do aplicativo','',"sair()")+
-      '<div class="drRodape">Farma Família · build 2026-08-08-5</div></div>';
+      '<div class="drRodape">Farma Família · build 2026-08-08-6</div></div>';
     document.body.appendChild(ov);
     requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
     return;
@@ -1813,7 +1816,7 @@ function abrirMenu(){
     item(IC.contas,'Lançamentos repetidos','Procura duplicidades',"conferirDuplicados()")+
     item(IC.baixar,'Exportar CSV','Planilha do período',"irPara('rel')")+
 
-    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-08-5</div>'+
+    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-08-6</div>'+
   '</div>';
   document.body.appendChild(ov);
   requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
