@@ -255,6 +255,23 @@
 const SUPABASE_URL = "https://cseypzniovlxvujapxgv.supabase.co";
 const SUPABASE_KEY = "sb_publishable_4yig9S3CCenfU7ff7HNtbQ_MztE4zfy";
 
+// Sem isso, uma conexão que trava no meio do caminho (rede instável, ou o
+// próprio servidor engasgando) deixava o app esperando pra sempre — foi a
+// causa da "tela vermelha travada". Toda chamada de rede do app passa por
+// aqui agora, com um prazo máximo de espera.
+async function fetchComLimite(url, opcoes, ms){
+  const controlador=new AbortController();
+  const limite=setTimeout(function(){ controlador.abort(); }, ms||20000);
+  try{
+    return await fetch(url, Object.assign({}, opcoes||{}, {signal:controlador.signal}));
+  }catch(e){
+    if(e.name==='AbortError') throw new Error('A conexão demorou demais e foi cancelada. Verifique a internet e tente de novo.');
+    throw new Error('Sem conexão com o servidor. Verifique a internet.');
+  }finally{
+    clearTimeout(limite);
+  }
+}
+
 const Sessao = {
   ler(){ try{ return JSON.parse(localStorage.getItem('sessao')) }catch{ return null } },
   gravar(s){ try{ localStorage.setItem('sessao', JSON.stringify(s)) }catch{} },
@@ -262,7 +279,7 @@ const Sessao = {
 };
 
 async function entrar(email, senha){
-  const r = await fetch(SUPABASE_URL+'/auth/v1/token?grant_type=password',{
+  const r = await fetchComLimite(SUPABASE_URL+'/auth/v1/token?grant_type=password',{
     method:'POST',
     headers:{'apikey':SUPABASE_KEY,'Content-Type':'application/json'},
     body:JSON.stringify({email:email,password:senha})
@@ -275,7 +292,7 @@ async function entrar(email, senha){
 
 async function renovarSessao(){
   const s = Sessao.ler(); if(!s || !s.refresh) return false;
-  const r = await fetch(SUPABASE_URL+'/auth/v1/token?grant_type=refresh_token',{
+  const r = await fetchComLimite(SUPABASE_URL+'/auth/v1/token?grant_type=refresh_token',{
     method:'POST',
     headers:{'apikey':SUPABASE_KEY,'Content-Type':'application/json'},
     body:JSON.stringify({refresh_token:s.refresh})
@@ -296,7 +313,7 @@ async function api(caminho, opcoes, jaRenovou){
     'Content-Type':'application/json',
     'Prefer':'return=representation'
   };
-  const r = await fetch(SUPABASE_URL+'/rest/v1/'+caminho, {
+  const r = await fetchComLimite(SUPABASE_URL+'/rest/v1/'+caminho, {
     method:opcoes.method||'GET',
     headers:cab,
     body:opcoes.body
@@ -937,7 +954,7 @@ async function gerarResumoIA(){
 
   const s=Sessao.ler();
   try{
-    const resp=await fetch(SUPABASE_URL+'/functions/v1/resumo-mensal',{
+    const resp=await fetchComLimite(SUPABASE_URL+'/functions/v1/resumo-mensal',{
       method:'POST',
       headers:{
         'Content-Type':'application/json',
@@ -945,7 +962,7 @@ async function gerarResumoIA(){
         'Authorization':'Bearer '+((s&&s.token)||SUPABASE_KEY)
       },
       body:JSON.stringify(payload)
-    });
+    }, 45000);
     const data=await resp.json();
     if(!area){}
     else if(data.erro){
@@ -1785,7 +1802,7 @@ function abrirMenu(){
       item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
       '<div class="drSecao">Conta</div>'+
       item(IC.sair,'Sair do aplicativo','',"sair()")+
-      '<div class="drRodape">Farma Família · build 2026-08-08-6</div></div>';
+      '<div class="drRodape">Farma Família · build 2026-08-14-1</div></div>';
     document.body.appendChild(ov);
     requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
     return;
@@ -1816,7 +1833,7 @@ function abrirMenu(){
     item(IC.contas,'Lançamentos repetidos','Procura duplicidades',"conferirDuplicados()")+
     item(IC.baixar,'Exportar CSV','Planilha do período',"irPara('rel')")+
 
-    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-08-6</div>'+
+    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-14-1</div>'+
   '</div>';
   document.body.appendChild(ov);
   requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
