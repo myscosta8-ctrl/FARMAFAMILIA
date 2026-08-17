@@ -223,12 +223,12 @@
   .import{display:flex;align-items:center;justify-content:center;gap:10px;background:var(--amberSoft);border:1px dashed var(--pineSoft);border-radius:12px;padding:13px;font-size:13.5px;font-weight:600;color:var(--pine);cursor:pointer;width:100%}
   .import svg{width:18px;height:18px}
   .scanner{position:fixed;inset:0;background:#000;z-index:100;overflow:hidden}
-  .scGiro{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(90deg)}
+  .scGiro{position:absolute;inset:0}
   .scanner video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-  .scMira{position:absolute;left:6%;right:6%;top:50%;height:70%;max-height:520px;transform:translateY(-50%);border:3px solid #fff;border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.45)}
+  .scMira{position:absolute;left:6%;right:6%;top:50%;height:36%;max-height:280px;transform:translateY(-50%);border:3px solid #fff;border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.45)}
   .scAviso{position:absolute;bottom:70px;left:0;right:0;text-align:center;color:#fff;font-size:14px;font-weight:600;text-shadow:0 1px 4px #000}
   .scFechar{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:#fff;color:var(--ink);border:none;border-radius:12px;padding:12px 26px;font-size:15px;font-weight:600;font-family:var(--i);cursor:pointer}
-  .scGirarBtn{position:absolute;top:16px;right:16px;width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.16);border:1.5px solid rgba(255,255,255,.5);color:#fff;display:grid;place-items:center;cursor:pointer}
+  .scGirarBtn{display:none}
   .scGirarBtn svg{width:22px;height:22px}
   .fotoAlt{display:block;text-align:center;font-size:12.5px;color:var(--muted);text-decoration:underline;margin-top:8px;cursor:pointer}
   .foto{display:flex;align-items:center;justify-content:center;gap:10px;background:var(--pine);color:#fff;border-radius:12px;padding:13px;font-size:14.5px;font-weight:600;cursor:pointer;width:100%;margin-bottom:2px}
@@ -1802,7 +1802,7 @@ function abrirMenu(){
       item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
       '<div class="drSecao">Conta</div>'+
       item(IC.sair,'Sair do aplicativo','',"sair()")+
-      '<div class="drRodape">Farma Família · build 2026-08-14-1</div></div>';
+      '<div class="drRodape">Farma Família · build 2026-08-14-2</div></div>';
     document.body.appendChild(ov);
     requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
     return;
@@ -1833,7 +1833,7 @@ function abrirMenu(){
     item(IC.contas,'Lançamentos repetidos','Procura duplicidades',"conferirDuplicados()")+
     item(IC.baixar,'Exportar CSV','Planilha do período',"irPara('rel')")+
 
-    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-14-1</div>'+
+    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-14-2</div>'+
   '</div>';
   document.body.appendChild(ov);
   requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
@@ -3425,7 +3425,6 @@ async function abrirScannerBoleto(){
       '<video id="scVideo" playsinline muted></video>'+
       '<div class="scMira"></div>'+
       '<div class="scAviso">Ler código de barras<br><small style="font-weight:400;opacity:.85">encaixe a faixa de barras dentro do quadro</small></div>'+
-      '<button class="scGirarBtn" onclick="girarCamera()" title="Girar a imagem">'+IC.girar+'</button>'+
       '<button class="scFechar" onclick="pararScanner()">Cancelar</button>'+
     '</div>';
   document.body.appendChild(ov);
@@ -3442,8 +3441,6 @@ async function abrirScannerBoleto(){
   const video=document.getElementById('scVideo');
   if(!video){ pararScanner(); return; }
   video.srcObject=scannerStream;
-  dimensionarScGiro();
-  aplicarGiroCamera();
   try{ await video.play(); }catch(e){}
 
   let formatos=['itf','code_128','codabar','code_39'];
@@ -3497,33 +3494,6 @@ async function abrirScannerBoleto(){
   },250);
 }
 
-// Cada aparelho entrega a imagem da câmera com uma orientação própria —
-// varia de celular pra celular. Em vez de tentar adivinhar, deixamos um
-// botão pra ajustar na hora, e guardamos a escolha pra não perguntar de
-// novo nas próximas leituras.
-function girarCamera(){
-  let atual=0;
-  try{ atual=parseInt(localStorage.getItem('farmafamilia_giroCamera')||'0',10)||0; }catch(e){}
-  atual=(atual+90)%360;
-  try{ localStorage.setItem('farmafamilia_giroCamera', String(atual)); }catch(e){}
-  aplicarGiroCamera();
-}
-// Mede a tela em pixels de verdade (não em vh/vw — essas unidades variam
-// no celular conforme a barra de endereço aparece ou some, e foi isso que
-// deixava sobrar tarja preta em cima e embaixo da câmera).
-function dimensionarScGiro(){
-  const g=document.querySelector('.scGiro');
-  if(!g) return;
-  g.style.width=window.innerHeight+'px';
-  g.style.height=window.innerWidth+'px';
-}
-window.addEventListener('resize', function(){ if(document.getElementById('scanner')) dimensionarScGiro(); });
-function aplicarGiroCamera(){
-  let atual=0;
-  try{ atual=parseInt(localStorage.getItem('farmafamilia_giroCamera')||'0',10)||0; }catch(e){}
-  const v=document.getElementById('scVideo');
-  if(v) v.style.transform='rotate('+atual+'deg)';
-}
 function pararScanner(){
   if(scannerLoop){ clearInterval(scannerLoop); scannerLoop=null; }
   if(scannerStream){ scannerStream.getTracks().forEach(function(t){ t.stop(); }); scannerStream=null; }
