@@ -225,7 +225,7 @@
   .scanner{position:fixed;inset:0;background:#000;z-index:100;overflow:hidden}
   .scGiro{position:absolute;inset:0}
   .scanner video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-  .scMira{position:absolute;left:6%;right:6%;top:50%;height:36%;max-height:280px;transform:translateY(-50%);border:3px solid #fff;border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.45)}
+  .scMira{position:absolute;left:6%;right:6%;top:50%;height:20%;max-height:170px;transform:translateY(-50%);border:3px solid #fff;border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.45)}
   .scAviso{position:absolute;bottom:70px;left:0;right:0;text-align:center;color:#fff;font-size:14px;font-weight:600;text-shadow:0 1px 4px #000}
   .scFechar{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:#fff;color:var(--ink);border:none;border-radius:12px;padding:12px 26px;font-size:15px;font-weight:600;font-family:var(--i);cursor:pointer}
   .scGirarBtn{display:none}
@@ -1802,7 +1802,7 @@ function abrirMenu(){
       item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
       '<div class="drSecao">Conta</div>'+
       item(IC.sair,'Sair do aplicativo','',"sair()")+
-      '<div class="drRodape">Farma Família · build 2026-08-14-3</div></div>';
+      '<div class="drRodape">Farma Família · build 2026-08-14-4</div></div>';
     document.body.appendChild(ov);
     requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
     return;
@@ -1833,7 +1833,7 @@ function abrirMenu(){
     item(IC.contas,'Lançamentos repetidos','Procura duplicidades',"conferirDuplicados()")+
     item(IC.baixar,'Exportar CSV','Planilha do período',"irPara('rel')")+
 
-    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-14-3</div>'+
+    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-14-4</div>'+
   '</div>';
   document.body.appendChild(ov);
   requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
