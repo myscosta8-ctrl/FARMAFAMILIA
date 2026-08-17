@@ -1802,7 +1802,7 @@ function abrirMenu(){
       item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
       '<div class="drSecao">Conta</div>'+
       item(IC.sair,'Sair do aplicativo','',"sair()")+
-      '<div class="drRodape">Farma Família · build 2026-08-14-2</div></div>';
+      '<div class="drRodape">Farma Família · build 2026-08-14-3</div></div>';
     document.body.appendChild(ov);
     requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
     return;
@@ -1833,7 +1833,7 @@ function abrirMenu(){
     item(IC.contas,'Lançamentos repetidos','Procura duplicidades',"conferirDuplicados()")+
     item(IC.baixar,'Exportar CSV','Planilha do período',"irPara('rel')")+
 
-    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-14-2</div>'+
+    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-14-3</div>'+
   '</div>';
   document.body.appendChild(ov);
   requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
@@ -3424,7 +3424,7 @@ async function abrirScannerBoleto(){
   ov.innerHTML='<div class="scGiro">'+
       '<video id="scVideo" playsinline muted></video>'+
       '<div class="scMira"></div>'+
-      '<div class="scAviso">Ler código de barras<br><small style="font-weight:400;opacity:.85">encaixe a faixa de barras dentro do quadro</small></div>'+
+      '<div class="scAviso">Ler código de barras<br><small style="font-weight:400;opacity:.85">pode aproximar bem — não precisa caber tudo no quadro</small></div>'+
       '<button class="scFechar" onclick="pararScanner()">Cancelar</button>'+
     '</div>';
   document.body.appendChild(ov);
