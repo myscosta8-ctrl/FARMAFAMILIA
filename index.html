@@ -1829,7 +1829,7 @@ function abrirMenu(){
       item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
       '<div class="drSecao">Conta</div>'+
       item(IC.sair,'Sair do aplicativo','',"sair()")+
-      '<div class="drRodape">Farma Família · build 2026-08-20-1</div></div>';
+      '<div class="drRodape">Farma Família · build 2026-08-20-2</div></div>';
     document.body.appendChild(ov);
     requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
     return;
@@ -1860,7 +1860,7 @@ function abrirMenu(){
     item(IC.contas,'Lançamentos repetidos','Procura duplicidades',"conferirDuplicados()")+
     item(IC.baixar,'Exportar CSV','Planilha do período',"irPara('rel')")+
 
-    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-20-1</div>'+
+    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-20-2</div>'+
   '</div>';
   document.body.appendChild(ov);
   requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
@@ -3094,35 +3094,47 @@ function blocoPanoramaGestao(){
   const aPagarTudo=totalAPagarTudo();
   const livre=caixaLivre();
 
-  // % do caixa que já está comprometido com contas a pagar — é o que o
-  // medidor mostra. Quanto mais cheio, menos sobra de livre de verdade.
+  // Quatro cores fixas, uma por indicador — usadas tanto no anel quanto
+  // nos pontos da legenda, pra bater exatamente um com o outro.
+  const corSaldo='var(--emerald)', corCompras='#3B6FD4', corContas='var(--rose)', corLivreDot='#D9A93B';
+
+  // % do caixa que já está comprometido com contas a pagar — continua
+  // sendo o texto central do medidor (o que mais importa de relance).
   const pctReal = acumulado>0 ? Math.min(999,(aPagarTudo/acumulado*100)) : (aPagarTudo>0?999:0);
-  const pctBarra = Math.max(0,Math.min(100,Math.round(pctReal)));
   const pctTxt = Math.round(pctReal);
-  const cor = pctReal<60?'var(--emerald)':pctReal<90?'#8A5A00':'var(--rose)';
+  const corTxt = pctReal<60?'var(--emerald)':pctReal<90?'#8A5A00':'var(--rose)';
   const bg  = pctReal<60?'#E7F6EF':pctReal<90?'#FDF1DC':'#FDECEC';
   const msg = pctReal<60?'Caixa folgado'
     : pctReal<90?'Caixa apertado'
     : 'Quase tudo comprometido';
   const corLivre = livre.livre>=0 ? 'var(--emerald)' : 'var(--rose)';
 
+  // O anel mostra os quatro valores lado a lado, proporcional ao peso de
+  // cada um — não é só um "comprometido x livre" de antes.
+  const vSaldo=Math.max(0,acumulado), vCompras=Math.max(0,compras),
+        vContas=Math.max(0,aPagarTudo), vLivre=Math.abs(livre.livre);
+  const soma=vSaldo+vCompras+vContas+vLivre || 1;
+  const p1=vSaldo/soma*100, p2=p1+vCompras/soma*100, p3=p2+vContas/soma*100;
+  const gradiente='conic-gradient('+corSaldo+' 0% '+p1+'%, '+corCompras+' '+p1+'% '+p2+'%, '+corContas+' '+p2+'% '+p3+'%, '+corLivreDot+' '+p3+'% 100%)';
+
   return '<div class="item" style="flex-direction:column;align-items:stretch">'+
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">'+
-      '<div class="iconC" style="background:'+bg+';color:'+cor+'">'+IC.rel+'</div>'+
+      '<div class="iconC" style="background:'+bg+';color:'+corTxt+'">'+IC.rel+'</div>'+
       '<div style="flex:1"><div style="font-size:14.5px;font-weight:600">'+msg+'</div>'+
       '<div style="font-size:11.5px;color:var(--muted)">Quanto do caixa já está comprometido</div></div>'+
     '</div>'+
 
     '<div style="display:flex;justify-content:center;margin-bottom:16px">'+
-      '<div class="donut" style="background:conic-gradient('+cor+' 0% '+pctBarra+'%, #EEEAE9 '+pctBarra+'% 100%)">'+
-        '<div class="donutCenter"><div class="donutPct" style="color:'+cor+'">'+pctTxt+'%</div><div class="donutSub">do caixa<br/>comprometido</div></div>'+
+      '<div class="donut" style="background:'+gradiente+'">'+
+        '<div class="donutCenter"><div class="donutPct" style="color:'+corTxt+'">'+pctTxt+'%</div><div class="donutSub">do caixa<br/>comprometido</div></div>'+
       '</div>'+
     '</div>'+
 
     '<div>'+
-      '<div class="metaLegLinha"><span class="metaLegPonto" style="background:var(--emerald)"></span>Saldo em caixa<span class="metaLegVal">'+brl(acumulado)+'</span></div>'+
-      '<div class="metaLegLinha"><span class="metaLegPonto" style="background:var(--pine)"></span>Compras pagas (mês)<span class="metaLegVal">'+brl(compras)+'</span></div>'+
-      '<div class="metaLegLinha"><span class="metaLegPonto" style="background:'+cor+'"></span>Contas a pagar (tudo)<span class="metaLegVal">'+brl(aPagarTudo)+'</span></div>'+
+      '<div class="metaLegLinha"><span class="metaLegPonto" style="background:'+corSaldo+'"></span>Saldo em caixa<span class="metaLegVal">'+brl(acumulado)+'</span></div>'+
+      '<div class="metaLegLinha"><span class="metaLegPonto" style="background:'+corCompras+'"></span>Compras pagas (mês)<span class="metaLegVal">'+brl(compras)+'</span></div>'+
+      '<div class="metaLegLinha"><span class="metaLegPonto" style="background:'+corContas+'"></span>Contas a pagar (tudo)<span class="metaLegVal">'+brl(aPagarTudo)+'</span></div>'+
+      '<div class="metaLegLinha"><span class="metaLegPonto" style="background:'+corLivreDot+'"></span>Caixa livre (saldo - contas a pagar)<span class="metaLegVal">'+brl(livre.livre)+'</span></div>'+
     '</div>'+
 
     '<div style="text-align:center;margin-top:6px;padding-top:12px;border-top:1px solid var(--line)">'+
