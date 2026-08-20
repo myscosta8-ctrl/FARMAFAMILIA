@@ -1442,17 +1442,44 @@ function comprometidoMes(){
   const hoje=new Date();
   const ini=new Date(hoje.getFullYear(),hoje.getMonth(),1).getTime();
   const fim=new Date(hoje.getFullYear(),hoje.getMonth()+1,1).getTime();
-  const jaSaiu=movimentos.filter(function(m){ return m.tipo==='SAIDA'&&m.ts>=ini&&m.ts<fim; })
-    .reduce(function(s,m){ return s+m.valor; },0);
-  // Tudo que ainda está pendente e vence até o fim deste mês — inclui contas
-  // atrasadas de meses anteriores, pra bater exatamente com o painel "Neste
-  // mês" da aba Contas (um boleto vencido ainda é dinheiro que vai sair).
+  // Compra de mercadoria (Distribuidor etc.) fica de fora daqui de propósito:
+  // é dinheiro que vira estoque que vira venda que vira lucro, não é gasto
+  // fixo. Contar isso dentro do teto geraria alarme falso justamente quando
+  // o negócio vai bem (mais venda = mais compra de reposição). Por isso
+  // "Meta de gastos" agora só olha despesa operacional, igual ao DRE já fazia.
+  const jaSaiu=movimentos.filter(function(m){
+    return m.tipo==='SAIDA'&&m.ts>=ini&&m.ts<fim&&grupoDaCategoria(m.categoria)!=='Mercadoria';
+  }).reduce(function(s,m){ return s+m.valor; },0);
   const aindaVence=contas.filter(function(c){
     if(c.tipo!=='PAGAR'||c.status==='PAGO') return false;
+    if(grupoDaCategoria(c.categoria)==='Mercadoria') return false;
     const t=new Date(c.venc+'T12:00:00').getTime();
     return t<fim;
   }).reduce(function(s,c){ return s+c.valor; },0);
   return {jaSaiu:jaSaiu, aindaVence:aindaVence, total:jaSaiu+aindaVence};
+}
+// Só a parte de mercadoria (Distribuidor etc.) — separada, porque essa é
+// investimento que volta como venda, não despesa que só consome caixa.
+function comprasPagas(){
+  const hoje=new Date();
+  const ini=new Date(hoje.getFullYear(),hoje.getMonth(),1).getTime();
+  const fim=new Date(hoje.getFullYear(),hoje.getMonth()+1,1).getTime();
+  return movimentos.filter(function(m){
+    return m.tipo==='SAIDA'&&m.ts>=ini&&m.ts<fim&&grupoDaCategoria(m.categoria)==='Mercadoria';
+  }).reduce(function(s,m){ return s+m.valor; },0);
+}
+// O que ainda falta pagar de tudo (não só deste mês) — a base pra saber
+// quanto do saldo acumulado já está, na prática, comprometido.
+function totalAPagarTudo(){
+  return contas.filter(function(c){ return c.tipo==='PAGAR'&&c.status!=='PAGO'; })
+    .reduce(function(s,c){ return s+c.valor; },0);
+}
+// Caixa livre = saldo acumulado menos tudo que ainda vai sair, de qualquer
+// vencimento. É a resposta pra "quanto eu realmente posso usar agora".
+function caixaLivre(){
+  const saldo=saldoAcumuladoTotal().saldo;
+  const aPagar=totalAPagarTudo();
+  return {saldo:saldo, aPagar:aPagar, livre:saldo-aPagar};
 }
 function cartaoMetaGastos(){
   if(metaTeto==null||metaTeto<=0) return '';
@@ -1802,7 +1829,7 @@ function abrirMenu(){
       item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
       '<div class="drSecao">Conta</div>'+
       item(IC.sair,'Sair do aplicativo','',"sair()")+
-      '<div class="drRodape">Farma Família · build 2026-08-14-5</div></div>';
+      '<div class="drRodape">Farma Família · build 2026-08-17-1</div></div>';
     document.body.appendChild(ov);
     requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
     return;
@@ -1833,7 +1860,7 @@ function abrirMenu(){
     item(IC.contas,'Lançamentos repetidos','Procura duplicidades',"conferirDuplicados()")+
     item(IC.baixar,'Exportar CSV','Planilha do período',"irPara('rel')")+
 
-    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-14-5</div>'+
+    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-17-1</div>'+
   '</div>';
   document.body.appendChild(ov);
   requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
@@ -3058,10 +3085,34 @@ let filtroEstoque='';
 //  GESTÃO — tudo que é indicador/planejamento, num lugar só
 //  (antes estava espalhado: parte no Início, parte no menu ☰)
 // ============================================================
+// Os quatro indicadores centrais da Gestão. Compra de mercadoria fica
+// separada do resto de propósito — é dinheiro que volta como venda, não
+// gasto que só sai. Ver conversa: farmácia identificou que misturar as
+// duas coisas no mesmo teto gerava alarme falso.
+function blocoPanoramaGestao(){
+  const acumulado=saldoAcumuladoTotal().saldo;
+  const compras=comprasPagas();
+  const aPagarTudo=totalAPagarTudo();
+  const livre=caixaLivre();
+  const corLivre = livre.livre>=0 ? 'var(--emerald)' : 'var(--rose)';
+
+  function linha(emoji,bg,cor,titulo,sub,valor,corValor){
+    return '<div class="item" style="margin-top:8px"><div class="iconC" style="background:'+bg+';color:'+cor+';font-size:16px">'+emoji+'</div>'+
+      '<div style="flex:1"><div style="font-size:14px;font-weight:600">'+titulo+'</div>'+
+      '<div style="font-size:11.5px;color:var(--muted)">'+sub+'</div></div>'+
+      '<div class="val2" style="color:'+(corValor||'var(--ink)')+'">'+brl(valor)+'</div></div>';
+  }
+
+  return linha('💰','#E7F6EF','var(--emerald)','Saldo em caixa','Quanto a farmácia tem disponível agora',acumulado)+
+    linha('🛒','var(--amberSoft)','var(--pine)','Compras pagas (mês)','Mercadoria já paga — vira estoque, depois venda',compras)+
+    linha('📅','#FDF1DC','#8A5A00','Contas a pagar','Tudo que ainda falta sair, de qualquer vencimento',aPagarTudo,'var(--rose)')+
+    linha('🟢',(livre.livre>=0?'#E7F6EF':'#FDECEC'),corLivre,'Caixa livre','Saldo em caixa − contas a pagar',livre.livre,corLivre);
+}
 function vGestao(){
-  return '<h2 class="sec" style="margin-top:0">Saldo total em caixa</h2>'+
-    cartaoSaldoAcumulado()+
+  return '<h2 class="sec" style="margin-top:0">Panorama</h2>'+
+    blocoPanoramaGestao()+
     '<h2 class="sec">Meta de gastos do mês</h2>'+
+    '<div class="dica" style="margin-top:0">Só despesa operacional (aluguel, salário, etc). Compra de mercadoria não entra aqui — ela é investimento, não gasto fixo.</div>'+
     (cartaoMetaGastos()||'<div class="vazio">Nenhum teto configurado. Defina em Menu → Administração.</div>')+
     '<h2 class="sec">Indicadores</h2>'+
     '<button class="btnS" style="width:100%" onclick="abrirDRE()">DRE do mês</button>'+
