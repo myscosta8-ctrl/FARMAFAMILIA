@@ -1829,7 +1829,7 @@ function abrirMenu(){
       item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
       '<div class="drSecao">Conta</div>'+
       item(IC.sair,'Sair do aplicativo','',"sair()")+
-      '<div class="drRodape">Farma Família · build 2026-08-20-2</div></div>';
+      '<div class="drRodape">Farma Família · build 2026-08-20-3</div></div>';
     document.body.appendChild(ov);
     requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
     return;
@@ -1860,7 +1860,7 @@ function abrirMenu(){
     item(IC.contas,'Lançamentos repetidos','Procura duplicidades',"conferirDuplicados()")+
     item(IC.baixar,'Exportar CSV','Planilha do período',"irPara('rel')")+
 
-    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-20-2</div>'+
+    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-20-3</div>'+
   '</div>';
   document.body.appendChild(ov);
   requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
@@ -2328,12 +2328,19 @@ function textoIgual(a,b){ return String(a||'').trim().toLowerCase()===String(b||
 function contaRepetida(d){
   for(let i=0;i<contas.length;i++){
     const c=contas[i];
-    if(d.documento && c.documento && c.documento===d.documento)
-      return {conta:c, motivo:'mesmo número de boleto ('+d.documento+')', forte:true};
+    // A linha digitável completa (47 dígitos) é o único identificador
+    // realmente confiável — o "nº do boleto" é só um recorte de 11 dígitos
+    // do código, e distribuidoras diferentes podem coincidir nesse pedaço
+    // sem serem o mesmo boleto (foi isso que gerou aviso errado).
     if(d.linha && c.linha && c.linha===d.linha)
       return {conta:c, motivo:'mesma linha digitável', forte:true};
     if(Math.abs(c.valor-d.valor)<0.005 && c.venc===d.vencimento && textoIgual(c.desc,d.descricao))
       return {conta:c, motivo:'mesmo valor, vencimento e descrição', forte:false};
+    // Nº do boleto igual conta como suspeita só se valor OU vencimento
+    // também baterem — sozinho, não é prova suficiente.
+    if(d.documento && c.documento && c.documento===d.documento &&
+       (Math.abs(c.valor-d.valor)<0.005 || c.venc===d.vencimento))
+      return {conta:c, motivo:'mesmo número de boleto ('+d.documento+'), e valor ou vencimento parecido', forte:false};
   }
   return null;
 }
@@ -2353,13 +2360,34 @@ function movimentoRepetido(d){
 // Mostra o aviso e devolve true se a pessoa quiser salvar mesmo assim
 function confirmarRepetido(r){
   const c=r.conta;
-  const msg='ATENÇÃO — parece repetido.\n\n'+
-    'Já existe: '+c.desc+'\n'+
-    'Valor: '+brl(c.valor)+'\n'+
-    'Vencimento: '+dm(c.venc)+'\n'+
-    (c.status==='PAGO'?'Situação: já pago\n':'')+
-    '\nMotivo: '+r.motivo+'\n\nSalvar assim mesmo?';
-  return confirm(msg);
+  return new Promise(function(resolve){
+    const ov=document.createElement('div');
+    ov.className='overlay';
+    const corIcone = r.forte ? 'var(--rose)' : '#8A5A00';
+    const corFundo = r.forte ? '#FDECEC' : '#FDF1DC';
+    ov.innerHTML='<div class="folha"><div class="folhaAlca"></div>'+
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">'+
+        '<div class="iconC" style="background:'+corFundo+';color:'+corIcone+'">'+IC.alerta+'</div>'+
+        '<span class="folhaTitulo">'+(r.forte?'Isso já existe':'Parece repetido')+'</span>'+
+      '</div>'+
+      '<div class="dica" style="margin-top:10px">'+r.motivo+'</div>'+
+      '<div class="item" style="margin-top:8px;flex-direction:column;align-items:stretch">'+
+        '<div style="font-size:12px;color:var(--muted)">Lançamento já existente</div>'+
+        '<div style="font-size:15px;font-weight:600;margin-top:2px">'+(c.desc||'sem descrição')+'</div>'+
+        '<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:13.5px">'+
+          '<strong>'+brl(c.valor)+'</strong><span style="color:var(--muted)">vence '+dm(c.venc)+'</span>'+
+        '</div>'+
+        (c.status==='PAGO'?'<div style="font-size:12px;color:var(--emerald);margin-top:5px;font-weight:600">já paga</div>':'')+
+      '</div>'+
+      '<button class="primario" style="margin-top:18px" id="repSalvar">Salvar assim mesmo</button>'+
+      '<button class="btnS" style="width:100%;margin-top:8px" id="repCancelar">Cancelar</button>'+
+    '</div>';
+    document.body.appendChild(ov);
+    function fechar(v){ ov.remove(); resolve(v); }
+    ov.onclick=function(e){ if(e.target===ov) fechar(false); };
+    ov.querySelector('#repSalvar').onclick=function(){ fechar(true); };
+    ov.querySelector('#repCancelar').onclick=function(){ fechar(false); };
+  });
 }
 // ---- Identificação do beneficiário pelo código de barras ----
 // O nome da distribuidora NÃO vem no código de barras. O que vem é banco +
@@ -3294,6 +3322,21 @@ function vContas(){
   return cabecalho + painelVencimentos(lista) + painelMeses(lista) + '<h2 class="sec">Lista</h2>' + itens;
 }
 // Detalhe da conta — aqui ficam as ações (pagar, editar, excluir), longe da lista
+// Formata a linha digitável (47 dígitos corridos) no jeito padrão de
+// boleto, em grupos, pra ficar fácil de conferir e copiar.
+function formatarLinha(l){
+  if(!l||l.length!==47) return l||'';
+  return l.slice(0,5)+'.'+l.slice(5,10)+' '+l.slice(10,15)+'.'+l.slice(15,21)+' '+
+         l.slice(21,26)+'.'+l.slice(26,32)+' '+l.slice(32,33)+' '+l.slice(33,47);
+}
+async function copiarLinha(linha){
+  try{
+    await navigator.clipboard.writeText(linha);
+    alert('Linha digitável copiada.');
+  }catch(e){
+    prompt('Copie manualmente:', linha);
+  }
+}
 function abrirContaDetalhe(id){
   const c=contas.filter(function(x){ return x.id===id; })[0]; if(!c) return;
   const receber=c.tipo==='RECEBER';
@@ -3308,6 +3351,11 @@ function abrirContaDetalhe(id){
     '<div class="detLinha"><span>Vencimento</span><strong>'+dm(c.venc)+'</strong></div>'+
     (c.categoria?'<div class="detLinha"><span>Categoria</span><strong>'+c.categoria+'</strong></div>':'')+
     (c.documento?'<div class="detLinha"><span>Nº do boleto</span><strong>'+c.documento+'</strong></div>':'')+
+    (c.linha?
+      '<div style="margin-top:10px"><div style="font-size:12px;color:var(--muted);margin-bottom:4px">Linha digitável (pra pagar mesmo sem o boleto em mãos)</div>'+
+      '<div style="font-family:var(--g);font-size:14px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;word-break:break-all">'+formatarLinha(c.linha)+'</div>'+
+      '<button class="btnS" style="width:100%;margin-top:8px" onclick="copiarLinha(\''+c.linha+'\')">Copiar linha digitável</button></div>'
+      : '')+
     (c.status==='PAGO'
       ? '<div class="detLinha"><span>'+(receber?'Recebido em':'Pago em')+'</span><strong>'+(og?og.t:'não informado')+'</strong></div>'
       : '')+
@@ -3434,7 +3482,7 @@ async function salvarConta(continuar){
   const dataPag=dPago||venc;
   const rep=contaRepetida({descricao:descricao, valor:v, vencimento:venc, documento:docNum,
                            linha:(el&&el.value.replace(/\D/g,''))||null});
-  if(rep && !confirmarRepetido(rep)) return;
+  if(rep && !(await confirmarRepetido(rep))) return;
   const b=document.getElementById('cBtn'); b.textContent='Salvando…'; b.disabled=true;
   try{
     const payloadConta={
