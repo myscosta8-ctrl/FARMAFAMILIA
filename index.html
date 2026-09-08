@@ -593,9 +593,10 @@ function conferirDuplicados(){
     for(let j=i+1;j<contas.length;j++){
       const a=contas[i], b=contas[j];
       let motivo=null;
-      if(a.documento && b.documento && a.documento===b.documento) motivo='mesmo número de boleto';
-      else if(a.linha && b.linha && a.linha===b.linha) motivo='mesma linha digitável';
-      else if(Math.abs(a.valor-b.valor)<0.005 && a.venc===b.venc && textoIgual(a.desc,b.desc)) motivo='mesmo valor, vencimento e descrição';
+      // Mesma regra da checagem ao salvar: só considera repetido quando
+      // código de barras completo, vencimento e valor batem os três juntos.
+      if(a.linha && b.linha && a.linha===b.linha && a.venc===b.venc && Math.abs(a.valor-b.valor)<0.005)
+        motivo='mesmo código de barras, vencimento e valor';
       if(motivo) achados.push({a:a,b:b,motivo:motivo,tipo:'Conta'});
     }
   }
@@ -1829,7 +1830,7 @@ function abrirMenu(){
       item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
       '<div class="drSecao">Conta</div>'+
       item(IC.sair,'Sair do aplicativo','',"sair()")+
-      '<div class="drRodape">Farma Família · build 2026-08-20-3</div></div>';
+      '<div class="drRodape">Farma Família · build 2026-09-07-1</div></div>';
     document.body.appendChild(ov);
     requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
     return;
@@ -1860,7 +1861,7 @@ function abrirMenu(){
     item(IC.contas,'Lançamentos repetidos','Procura duplicidades',"conferirDuplicados()")+
     item(IC.baixar,'Exportar CSV','Planilha do período',"irPara('rel')")+
 
-    '<div class="drRodape">Farma Família · controle comercial · build 2026-08-20-3</div>'+
+    '<div class="drRodape">Farma Família · controle comercial · build 2026-09-07-1</div>'+
   '</div>';
   document.body.appendChild(ov);
   requestAnimationFrame(function(){ const d=document.getElementById('drawer'); if(d) d.classList.add('drAberto'); });
@@ -2324,23 +2325,20 @@ function abrirComparativo(){
 // ---- Verificação de lançamento repetido ----
 function textoIgual(a,b){ return String(a||'').trim().toLowerCase()===String(b||'').trim().toLowerCase(); }
 
-// Procura uma conta já cadastrada igual à que está sendo salva
+// Procura uma conta já cadastrada igual à que está sendo salva. Só é
+// considerado duplicado quando os TRÊS baterem ao mesmo tempo: código de
+// barras completo (linha digitável), vencimento e valor. Se faltar
+// qualquer um dos três — ou não tiver a linha digitável pra comparar —
+// o app não assume que é repetido.
 function contaRepetida(d){
+  if(!d.linha) return null;
   for(let i=0;i<contas.length;i++){
     const c=contas[i];
-    // A linha digitável completa (47 dígitos) é o único identificador
-    // realmente confiável — o "nº do boleto" é só um recorte de 11 dígitos
-    // do código, e distribuidoras diferentes podem coincidir nesse pedaço
-    // sem serem o mesmo boleto (foi isso que gerou aviso errado).
-    if(d.linha && c.linha && c.linha===d.linha)
-      return {conta:c, motivo:'mesma linha digitável', forte:true};
-    if(Math.abs(c.valor-d.valor)<0.005 && c.venc===d.vencimento && textoIgual(c.desc,d.descricao))
-      return {conta:c, motivo:'mesmo valor, vencimento e descrição', forte:false};
-    // Nº do boleto igual conta como suspeita só se valor OU vencimento
-    // também baterem — sozinho, não é prova suficiente.
-    if(d.documento && c.documento && c.documento===d.documento &&
-       (Math.abs(c.valor-d.valor)<0.005 || c.venc===d.vencimento))
-      return {conta:c, motivo:'mesmo número de boleto ('+d.documento+'), e valor ou vencimento parecido', forte:false};
+    if(c.linha && c.linha===d.linha &&
+       c.venc===d.vencimento &&
+       Math.abs(c.valor-d.valor)<0.005){
+      return {conta:c, motivo:'mesmo código de barras, vencimento e valor', forte:true};
+    }
   }
   return null;
 }
