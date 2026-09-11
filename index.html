@@ -393,6 +393,21 @@ function parseValor(txt){
   return isNaN(n)?NaN:n;
 }
 function brl(n){ return Number(n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
+// Todo texto vindo do banco (descrição, categoria, nome...) passa por aqui antes
+// de entrar em innerHTML — sem isso, um texto como "<img onerror=...>" digitado
+// num lançamento rodaria como código na tela de quem quer que abra o app depois.
+function escapeHtml(s){
+  return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+// Para texto (ex.: nome de categoria, digitado livremente pelo usuário) que vai
+// dentro de um onclick="...='+valor+'..." — primeiro escapa a aspa simples pra
+// não fechar a string JS antes da hora, depois escapa pra HTML porque o
+// onclick inteiro é um atributo (delimitado por aspas duplas).
+function escapeAttrJs(s){
+  return escapeHtml(String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
+}
 function comHora(d){ return String(d).length===10 ? d+'T12:00:00' : d; }
 function dm(d){ return new Date(comHora(d)).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}); }
 function inicioDia(d){ d=d||new Date(); return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime(); }
@@ -425,7 +440,7 @@ function abrirGerenciarCategorias(){
         (porTipo[t].length?porTipo[t].map(function(c){
           const uso=contaUsoCategoria(c.nome);
           return '<div class="item" style="margin-top:6px"><div style="flex:1">'+
-            '<div style="font-size:14px;font-weight:500">'+c.nome+'</div>'+
+            '<div style="font-size:14px;font-weight:500">'+escapeHtml(c.nome)+'</div>'+
             '<div style="font-size:11px;color:var(--muted)">'+(uso?uso+' lançamento(s)':'não usada')+'</div></div>'+
             '<button class="pagarBtn" style="color:var(--pine);background:#EEF2F0" onclick="renomearCategoria(\''+c.id+'\')">Renomear</button>'+
             '<button class="lixo" onclick="excluirCategoria(\''+c.id+'\')">'+IC.lixo+'</button></div>';
@@ -473,7 +488,7 @@ function montarHistorico(){
   historicoDesc=lista.sort();
 }
 function listaSugestoes(id){
-  return '<datalist id="'+id+'">'+historicoDesc.map(function(d){ return '<option value="'+d.replace(/"/g,'&quot;')+'"></option>'; }).join('')+'</datalist>';
+  return '<datalist id="'+id+'">'+historicoDesc.map(function(d){ return '<option value="'+escapeHtml(d)+'"></option>'; }).join('')+'</datalist>';
 }
 function somaMov(tipo,desde,ate,categoria){ return movimentos.filter(function(m){ return m.tipo===tipo&&m.ts>=desde&&m.ts<ate&&(!categoria||m.categoria===categoria); }).reduce(function(s,m){ return s+m.valor; },0); }
 function resumoVendas(){ const d0=inicioDia(),am=d0+86400000,s0=am-7*86400000,m0=new Date(new Date().getFullYear(),new Date().getMonth(),1).getTime(); return {dia:somaMov('ENTRADA',d0,am,'Venda'),semana:somaMov('ENTRADA',s0,am,'Venda'),mes:somaMov('ENTRADA',m0,am,'Venda')}; }
@@ -516,7 +531,7 @@ function alertas(){
 let buscaTexto='', buscaDe='', buscaAte='', buscaTipo='TODOS';
 function abrirBusca(){
   abrirFolha('Buscar lançamentos',
-    '<input id="bqTexto" placeholder="Distribuidora, descrição, categoria ou valor" value="'+(buscaTexto||'')+'" oninput="buscaTexto=this.value;resultadosBusca()"/>'+
+    '<input id="bqTexto" placeholder="Distribuidora, descrição, categoria ou valor" value="'+escapeHtml(buscaTexto||'')+'" oninput="buscaTexto=this.value;resultadosBusca()"/>'+
     '<div class="chips" style="margin-top:10px">'+
       [['TODOS','Tudo'],['SAIDA','Saídas'],['ENTRADA','Entradas'],['CONTAS','Contas']].map(function(t){
         return '<button class="chip '+(buscaTipo===t[0]?'on':'')+'" onclick="buscaTipo=\''+t[0]+'\';abrirBuscaMantendo()">'+t[1]+'</button>';
@@ -580,8 +595,8 @@ function resultadosBusca(){
   alvo.innerHTML='<div class="totalAberto"><span>'+itens.length+' resultado(s)</span><strong>'+brl(soma)+'</strong></div>'+
     itens.slice(0,80).map(function(x){
       return '<div class="item" style="margin-top:8px'+(x.tipo==='mov'?';cursor:pointer" onclick="fecharFolha();abrirEditar(\''+x.id+'\')':'"')+'>'+
-        '<div style="flex:1"><div style="font-size:14px;font-weight:500">'+x.titulo+'</div>'+
-        '<div style="font-size:11.5px;color:var(--muted)">'+x.sub+'</div></div>'+
+        '<div style="flex:1"><div style="font-size:14px;font-weight:500">'+escapeHtml(x.titulo)+'</div>'+
+        '<div style="font-size:11.5px;color:var(--muted)">'+escapeHtml(x.sub)+'</div></div>'+
         '<div class="val2" style="color:'+(x.entrada?'var(--emerald)':'var(--rose)')+'">'+brl(x.valor)+'</div></div>';
     }).join('')+
     (itens.length>80?'<div class="dica">Mostrando os 80 mais recentes. Refine a busca para ver menos.</div>':'');
@@ -617,7 +632,7 @@ function conferirDuplicados(){
       ? '<div class="totalAberto"><span>'+achados.length+' possível(is) repetição(ões)</span></div>'+
         achados.slice(0,40).map(function(x){
           return '<div class="item" style="margin-top:8px;display:block">'+
-            '<div style="font-size:14px;font-weight:500">'+x.a.desc+' — '+brl(x.a.valor)+'</div>'+
+            '<div style="font-size:14px;font-weight:500">'+escapeHtml(x.a.desc)+' — '+brl(x.a.valor)+'</div>'+
             '<div style="font-size:11.5px;color:var(--muted);margin-top:3px">'+x.tipo+' · '+x.motivo+' · '+dm(x.a.venc)+'</div>'+
             (x.idB?'<button class="pagarBtn" style="color:var(--rose);background:#FDECEC;margin-top:6px" onclick="apagarMov(\''+x.idB+'\')">Excluir a segunda cópia</button>':'')+
           '</div>';
@@ -717,7 +732,7 @@ function vSimples(){
   const totalProx=proximas.reduce(function(s,c){ return s+c.valor; },0);
   const positivo=A.saldo>=0;
 
-  return '<div class="simpleOi">Olá'+(meuNome?', '+meuNome:'')+'</div>'+
+  return '<div class="simpleOi">Olá'+(meuNome?', '+escapeHtml(meuNome):'')+'</div>'+
     '<section class="hero"><div class="brilho"></div>'+
       '<div class="lbl">Saldo deste mês</div>'+
       '<div class="val">'+brl(A.saldo)+'</div>'+
@@ -967,9 +982,9 @@ async function gerarResumoIA(){
     const data=await resp.json();
     if(!area){}
     else if(data.erro){
-      area.innerHTML='<div class="dica" style="color:var(--rose);background:#FDECEC;border-radius:10px;padding:10px 12px">'+data.erro+'</div>';
+      area.innerHTML='<div class="dica" style="color:var(--rose);background:#FDECEC;border-radius:10px;padding:10px 12px">'+escapeHtml(data.erro)+'</div>';
     }else if(data.texto){
-      area.innerHTML='<div class="cmpCard" style="margin-top:2px"><div style="font-size:13.5px;line-height:1.6">'+data.texto+'</div></div>';
+      area.innerHTML='<div class="cmpCard" style="margin-top:2px"><div style="font-size:13.5px;line-height:1.6">'+escapeHtml(data.texto).replace(/\n/g,'<br>')+'</div></div>';
     }else{
       area.innerHTML='<div class="dica" style="color:var(--rose)">Resposta inesperada da IA.</div>';
     }
@@ -1350,7 +1365,7 @@ function aplicarSugestao(idDesc,idChips,tipo,callbackEscolha){
   const aviso=document.getElementById(idChips+'Sug');
   if(!aviso) return;
   if(!cat){ aviso.innerHTML=''; return; }
-  aviso.innerHTML='Sugestão: <button class="chipSug" onclick="'+callbackEscolha+'(\''+cat+'\')">'+cat+'</button>';
+  aviso.innerHTML='Sugestão: <button class="chipSug" onclick="'+callbackEscolha+'(\''+escapeAttrJs(cat)+'\')">'+escapeHtml(cat)+'</button>';
 }
 // Ordena as categorias colocando as mais usadas primeiro
 function categoriasOrdenadas(tipo){
@@ -1569,7 +1584,7 @@ function abrirAdministracao(){
   };
   abrirFolha('Administração',
     '<div class="admCartao"><div class="admRot">Administrador geral</div>'+
-      '<div class="admNome">'+(nomeAdmin||'—')+'</div>'+
+      '<div class="admNome">'+escapeHtml(nomeAdmin||'—')+'</div>'+
       '<div class="admMail">'+((Sessao.ler()||{}).email||'')+'</div></div>'+
     '<div class="dica">O que os outros usuários (Brenda e Naldo) podem fazer. Você nunca é limitado por estas chaves.</div>'+
     linha('pode_criar','Criar lançamentos','Vendas, saídas, boletos, despesas')+
@@ -1598,16 +1613,17 @@ function abrirAdministracao(){
     (operadores.length?operadores.map(function(o){
       const ehAdmin=String(o.email).toLowerCase()===String((Sessao.ler()||{}).email||'').toLowerCase()&&souAdmin;
       return '<div class="item" style="margin-top:8px"><div style="flex:1">'+
-        '<div style="font-size:14px;font-weight:500">'+(o.nome||o.email)+(ehAdmin?' <span class="selo" style="background:var(--pine)">admin</span>':'')+'</div>'+
-        '<div style="font-size:11px;color:var(--muted)">'+o.email+'</div>'+
+        '<div style="font-size:14px;font-weight:500">'+escapeHtml(o.nome||o.email)+(ehAdmin?' <span class="selo" style="background:var(--pine)">admin</span>':'')+'</div>'+
+        '<div style="font-size:11px;color:var(--muted)">'+escapeHtml(o.email)+'</div>'+
         '<div style="font-size:11px;color:var(--muted);margin-top:2px">'+(o.visao_simples?'Visão de acompanhamento':'App completo')+'</div></div>'+
-        (ehAdmin?'':'<button class="chave'+(o.visao_simples?'':' chaveOn')+'" onclick="alternarVisao(\''+o.email+'\')"><span></span></button>')+
+        (ehAdmin?'':'<button class="chave'+(o.visao_simples?'':' chaveOn')+'" onclick="alternarVisao(\''+encodeURIComponent(o.email)+'\')"><span></span></button>')+
         '</div>';
     }).join(''):'<div class="vazio">Nenhum usuário cadastrado.</div>')+
     '<div class="dica">Chave ligada = app completo. Desligada = só acompanhamento (vê os números, não lança).</div>'+
     '<div class="dica">As mudanças valem assim que a pessoa recarregar o aplicativo.</div>');
 }
 async function alternarVisao(email){
+  email=decodeURIComponent(email);
   if(!souAdmin){ alert('Área exclusiva do administrador.'); return; }
   const o=operadores.filter(function(x){ return x.email===email; })[0]; if(!o) return;
   const novo=!o.visao_simples;
@@ -1776,8 +1792,8 @@ async function abrirHistorico(){
             '<span class="tag" style="color:'+cor+';background:'+cor+'18">'+h.acao+' · '+h.entidade+'</span>'+
             (h.valor!=null?'<strong class="val2">'+brl(h.valor)+'</strong>':'')+
           '</div>'+
-          '<div style="font-size:13.5px;margin-top:5px">'+(h.descricao||'—')+'</div>'+
-          '<div style="font-size:11px;color:var(--muted);margin-top:3px">'+data+' · '+(h.quem||'?')+'</div>'+
+          '<div style="font-size:13.5px;margin-top:5px">'+escapeHtml(h.descricao||'—')+'</div>'+
+          '<div style="font-size:11px;color:var(--muted);margin-top:3px">'+data+' · '+escapeHtml(h.quem||'?')+'</div>'+
           (podeReverter?'<button class="pagarBtn" style="margin-top:6px" onclick="restaurarDoHistorico(\''+h.id+'\')">Recuperar este lançamento</button>':'')+
         '</div>';
       }).join('')
@@ -1824,7 +1840,7 @@ function abrirMenu(){
   if(visaoSimples){
     ov.innerHTML='<div class="drawer" id="drawer">'+
       '<div class="drTopo"><div class="marca"><img src="icone-192.png" alt=""/></div>'+
-        '<div><div class="drNome">Farma Família</div><div class="drEmail">'+((s&&s.email)||'')+'</div>'+
+        '<div><div class="drNome">Farma Família</div><div class="drEmail">'+escapeHtml((s&&s.email)||'')+'</div>'+
         '<span class="selo seloOp">Acompanhamento</span></div></div>'+
       '<div class="drSecao">Ver</div>'+
       item(IC.rel,'Evolução da farmácia','Últimos 6 meses',"abrirEvolucao()")+
@@ -1837,7 +1853,7 @@ function abrirMenu(){
   }
   ov.innerHTML='<div class="drawer" id="drawer">'+
     '<div class="drTopo"><div class="marca"><img src="icone-192.png" alt=""/></div>'+
-      '<div><div class="drNome">Farma Família</div><div class="drEmail">'+((s&&s.email)||'')+'</div>'+
+      '<div><div class="drNome">Farma Família</div><div class="drEmail">'+escapeHtml((s&&s.email)||'')+'</div>'+
       (souAdmin?'<span class="selo">Administrador</span>':'<span class="selo seloOp">Operador</span>')+'</div></div>'+
 
     '<div class="drSecao">Categorias</div>'+
@@ -1944,7 +1960,7 @@ function abrirAuditoria(){
             grupos[g].map(function(x,idx){
               const chave=g+'|'+idx;
               return '<div class="item" style="margin-top:6px;display:block">'+
-                '<div style="font-size:13.5px">'+x.t+'</div>'+
+                '<div style="font-size:13.5px">'+escapeHtml(x.t)+'</div>'+
                 (x.corrige?'<button class="pagarBtn" style="margin-top:6px" onclick="corrigirAuditoria(\''+encodeURIComponent(JSON.stringify(x.corrige))+'\')">Corrigir</button>':
                            '<div class="dica" style="margin-top:4px">Revise manualmente.</div>')+
               '</div>';
@@ -2069,8 +2085,8 @@ function abrirReclassificar(){
       const cats=Object.keys(g.cats);
       const catAtual=cats.length===1?cats[0]:cats.join(' / ');
       return '<div class="item" style="margin-top:8px;cursor:pointer" onclick="trocarCategoriaGrupo(\''+encodeURIComponent(g.desc)+'\')">'+
-        '<div style="flex:1"><div style="font-size:14px;font-weight:500">'+g.desc+'</div>'+
-        '<div style="font-size:11.5px;color:var(--muted)">'+g.qtd+'x · '+catAtual+'</div></div>'+
+        '<div style="flex:1"><div style="font-size:14px;font-weight:500">'+escapeHtml(g.desc)+'</div>'+
+        '<div style="font-size:11.5px;color:var(--muted)">'+g.qtd+'x · '+escapeHtml(catAtual)+'</div></div>'+
         '<div class="val2">'+brl(g.total)+'</div></div>';
     }).join(''));
 }
@@ -2083,7 +2099,7 @@ function trocarCategoriaGrupo(descEnc){
     '<div class="dica">A mudança vale para todos os lançamentos com essa descrição.</div>',
     function(){
       document.getElementById('rcCats').innerHTML=CATS.SAIDA.map(function(c){
-        return '<button class="chip" onclick="aplicarCategoriaGrupo(\''+c+'\')">'+c+'</button>';
+        return '<button class="chip" onclick="aplicarCategoriaGrupo(\''+escapeAttrJs(c)+'\')">'+escapeHtml(c)+'</button>';
       }).join('')+'<button class="chip chipNova" onclick="novaCategoria(\'SAIDA\',\'grupo\')">+ nova</button>';
     });
 }
@@ -2164,7 +2180,7 @@ function abrirNovaRecorrente(){
     '<button class="primario" id="rBtn">Salvar</button>',
     function(){
       document.getElementById('rCats').innerHTML=CATS.SAIDA.map(function(c){
-        return '<button class="chip '+(c===recCat?'on':'')+'" onclick="recCat=\''+c+'\';document.querySelectorAll(\'#rCats .chip\').forEach(function(x){x.classList.remove(\'on\')});event.target.classList.add(\'on\')">'+c+'</button>';
+        return '<button class="chip '+(c===recCat?'on':'')+'" onclick="recCat=\''+escapeAttrJs(c)+'\';document.querySelectorAll(\'#rCats .chip\').forEach(function(x){x.classList.remove(\'on\')});event.target.classList.add(\'on\')">'+escapeHtml(c)+'</button>';
       }).join('');
       document.getElementById('rd').focus();
       document.getElementById('rBtn').onclick=salvarRecorrente;
@@ -2371,7 +2387,7 @@ function confirmarRepetido(r){
       '<div class="dica" style="margin-top:10px">'+r.motivo+'</div>'+
       '<div class="item" style="margin-top:8px;flex-direction:column;align-items:stretch">'+
         '<div style="font-size:12px;color:var(--muted)">Lançamento já existente</div>'+
-        '<div style="font-size:15px;font-weight:600;margin-top:2px">'+(c.desc||'sem descrição')+'</div>'+
+        '<div style="font-size:15px;font-weight:600;margin-top:2px">'+escapeHtml(c.desc||'sem descrição')+'</div>'+
         '<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:13.5px">'+
           '<strong>'+brl(c.valor)+'</strong><span style="color:var(--muted)">vence '+dm(c.venc)+'</span>'+
         '</div>'+
@@ -2690,8 +2706,8 @@ function vInicio(){
         const e=m.tipo==='ENTRADA', ed=podeEditar(m), og=origemTag(m.origem);
         return '<div class="item"'+(ed?' style="cursor:pointer" onclick="abrirEditar(\''+m.id+'\')"':'')+'>'+
           '<div class="iconC" style="background:'+(e?'#E7F6EF':'#FDECEC')+';color:'+(e?'var(--emerald)':'var(--rose)')+'">'+(e?IC.up:IC.down)+'</div>'+
-          '<div style="flex:1"><div style="font-size:14px;font-weight:500">'+(m.desc||m.categoria||'Lançamento')+'</div>'+
-          '<div style="font-size:11.5px;color:var(--muted)">'+dm(dataLocal(m.ts))+' · '+(m.categoria||'')+(splitTexto(m)?' · '+splitTexto(m):(og?' · '+og.t:''))+'</div></div>'+
+          '<div style="flex:1"><div style="font-size:14px;font-weight:500">'+escapeHtml(m.desc||m.categoria||'Lançamento')+'</div>'+
+          '<div style="font-size:11.5px;color:var(--muted)">'+dm(dataLocal(m.ts))+' · '+escapeHtml(m.categoria||'')+(splitTexto(m)?' · '+escapeHtml(splitTexto(m)):(og?' · '+escapeHtml(og.t):''))+'</div></div>'+
           '<div style="text-align:right"><div class="val2" style="color:'+(e?'var(--emerald)':'var(--rose)')+'">'+(e?'+':'−')+' '+brl(m.valor)+'</div>'+
           (ed?'<div style="font-size:10.5px;color:var(--muted);margin-top:2px">toque para corrigir</div>':'')+'</div></div>';
       }).join('')
@@ -2768,7 +2784,7 @@ function escolherDespCat(c){ despCat=c; redesenharCatsDespesa(); }
 function redesenharCatsDespesa(){
   const el=document.getElementById('dCats'); if(!el) return;
   el.innerHTML=categoriasOrdenadas('DESPESA').map(function(c){
-    return '<button class="chip '+(c===despCat?'on':'')+'" onclick="despCat=\''+c+'\';redesenharCatsDespesa()">'+c+'</button>';
+    return '<button class="chip '+(c===despCat?'on':'')+'" onclick="despCat=\''+escapeAttrJs(c)+'\';redesenharCatsDespesa()">'+escapeHtml(c)+'</button>';
   }).join('')+'<button class="chip chipNova" onclick="novaCategoria(\'DESPESA\',\'desp\')">+ nova</button>';
 }
 function previa(idCampo,idAviso){
@@ -2836,7 +2852,7 @@ function abrirEditar(id){
       : '<label class="campo">Valor</label><input id="ev" inputmode="numeric" oninput="mascaraMoeda(this);previa(\'ev\',\'ePrev\')" value="'+valorFmt+'"/>'+
         '<div id="ePrev" class="previa"></div>')+
     '<label class="campo">Categoria</label><div class="chips" id="eCats"></div>'+
-    '<label class="campo">Descrição</label>'+listaSugestoes('sugEdit')+'<input id="ed" list="sugEdit" value="'+(m.desc||'').replace(/"/g,'&quot;')+'"/>'+
+    '<label class="campo">Descrição</label>'+listaSugestoes('sugEdit')+'<input id="ed" list="sugEdit" value="'+escapeHtml(m.desc||'')+'"/>'+
     (editDividido ? '' :
       '<label class="campo" id="eOrigemLabel">'+(editTipo==='SAIDA'?'De onde saiu o dinheiro':'Onde caiu esse dinheiro')+' (opcional)</label>'+chipsOrigem('eOrigemChips',editOrigem,'escolherEditOrigem'))+
     '<label class="campo">Data</label><input id="edata" type="date" value="'+dataISO+'"/>'+
@@ -2866,7 +2882,7 @@ function setEditTipo(t,catInicial){
   const tg=document.getElementById('edToggle');
   tg.children[0].style.background=t==='ENTRADA'?'var(--emerald)':'transparent'; tg.children[0].style.color=t==='ENTRADA'?'#fff':'var(--muted)';
   tg.children[1].style.background=t==='SAIDA'?'var(--rose)':'transparent'; tg.children[1].style.color=t==='SAIDA'?'#fff':'var(--muted)';
-  document.getElementById('eCats').innerHTML=categoriasOrdenadas(t).map(function(c){ return '<button class="chip '+(c===editCat?'on':'')+'" onclick="editCat=\''+c+'\';setEditTipo(editTipo,\''+c+'\')">'+c+'</button>'; }).join('')+'<button class="chip chipNova" onclick="novaCategoria(\''+t+'\',\'edit\')">+ nova</button>';
+  document.getElementById('eCats').innerHTML=categoriasOrdenadas(t).map(function(c){ return '<button class="chip '+(c===editCat?'on':'')+'" onclick="editCat=\''+escapeAttrJs(c)+'\';setEditTipo(editTipo,\''+escapeAttrJs(c)+'\')">'+escapeHtml(c)+'</button>'; }).join('')+'<button class="chip chipNova" onclick="novaCategoria(\''+escapeAttrJs(t)+'\',\'edit\')">+ nova</button>';
   const rot=document.getElementById('eOrigemLabel'); if(rot) rot.textContent=(t==='SAIDA'?'De onde saiu o dinheiro':'Onde caiu esse dinheiro')+' (opcional)';
 }
 async function salvarEdicao(id){
@@ -2995,7 +3011,7 @@ function redesenharVendasMes(){
         return '<div class="item"'+(ed?' style="cursor:pointer" onclick="fecharFolha();abrirEditar(\''+m.id+'\')"':'')+'>'+
           '<div class="iconC" style="background:#E7F6EF;color:var(--emerald)">'+IC.up+'</div>'+
           '<div style="flex:1"><div style="font-size:14px;font-weight:500">'+dt.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'})+'</div>'+
-          '<div style="font-size:11.5px;color:var(--muted)">'+(splitTexto(m)||og&&og.t||(m.desc&&m.desc!=='Venda'?m.desc:'')||'')+'</div></div>'+
+          '<div style="font-size:11.5px;color:var(--muted)">'+escapeHtml(splitTexto(m)||og&&og.t||(m.desc&&m.desc!=='Venda'?m.desc:'')||'')+'</div></div>'+
           '<div style="text-align:right"><div class="val2" style="color:var(--emerald)">'+brl(m.valor)+'</div>'+
           (ed?'<div style="font-size:10px;color:var(--muted);margin-top:2px">toque para corrigir</div>':'')+'</div></div>';
       }).join('')
@@ -3035,7 +3051,7 @@ function vCaixa(){
     '<h2 class="sec">Movimentos '+(ehHoje?'de hoje':'de '+dm(caixaData))+'</h2>'+
     (doDia.length?doDia.map(function(m){ const e=m.tipo==='ENTRADA'; const ed=podeEditar(m); const og=origemTag(m.origem); return '<div class="item"'+(ed?' style="cursor:pointer" onclick="abrirEditar(\''+m.id+'\')"':'')+'>'+
       '<div class="iconC" style="background:'+(e?'#E7F6EF':'#FDECEC')+';color:'+(e?'var(--emerald)':'var(--rose)')+'">'+(e?IC.up:IC.down)+'</div>'+
-      '<div style="flex:1"><div style="font-size:14px;font-weight:500">'+(m.desc||m.categoria||'Lançamento')+'</div>'+
+      '<div style="flex:1"><div style="font-size:14px;font-weight:500">'+escapeHtml(m.desc||m.categoria||'Lançamento')+'</div>'+
       '<div style="font-size:11.5px;color:var(--muted);margin-top:2px">'+(m.categoria||'')+' · '+new Date(m.ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+
       (splitTexto(m)?' · '+splitTexto(m):(og?' <span class="tag" style="color:'+og.c+';background:'+og.bg+';margin-left:4px;padding:1px 6px">'+og.t+'</span>':''))+'</div></div>'+
       '<div style="text-align:right"><div class="val2" style="color:'+(e?'var(--emerald)':'var(--rose)')+'">'+(e?'+':'−')+' '+brl(m.valor)+'</div>'+
@@ -3071,7 +3087,7 @@ function setMovTipo(t){
   const tg=document.getElementById('movToggle');
   tg.children[0].style.background=t==='ENTRADA'?'var(--emerald)':'transparent';tg.children[0].style.color=t==='ENTRADA'?'#fff':'var(--muted)';
   tg.children[1].style.background=t==='SAIDA'?'var(--rose)':'transparent';tg.children[1].style.color=t==='SAIDA'?'#fff':'var(--muted)';
-  document.getElementById('mCats').innerHTML=categoriasOrdenadas(t).map(function(c){ return '<button class="chip '+(c===movCat?'on':'')+'" onclick="movCat=\''+c+'\';setMovTipo(movTipo)">'+c+'</button>'; }).join('')+'<button class="chip chipNova" onclick="novaCategoria(\''+t+'\',\'mov\')">+ nova</button>';
+  document.getElementById('mCats').innerHTML=categoriasOrdenadas(t).map(function(c){ return '<button class="chip '+(c===movCat?'on':'')+'" onclick="movCat=\''+escapeAttrJs(c)+'\';setMovTipo(movTipo)">'+escapeHtml(c)+'</button>'; }).join('')+'<button class="chip chipNova" onclick="novaCategoria(\''+escapeAttrJs(t)+'\',\'mov\')">+ nova</button>';
 }
 async function salvarMov(){
   const v=parseValor(document.getElementById('mv').value);if(!v)return;
@@ -3189,13 +3205,13 @@ function vEstoque(){
   const vis=produtos.filter(function(p){ return p.desc.toLowerCase().indexOf(f)>=0; });
   const corpo=vis.length?vis.map(function(p){
     const sv=statusValidade(p.validade); const baixo=Number(p.minimo||0)>0&&estoqueDe(p)<Number(p.minimo);
-    return '<div class="item"><div style="flex:1"><div style="font-size:14px;font-weight:500">'+p.desc+'</div>'+
+    return '<div class="item"><div style="flex:1"><div style="font-size:14px;font-weight:500">'+escapeHtml(p.desc)+'</div>'+
       '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'+(sv?'<span class="tag" style="color:'+sv.c+';background:'+sv.bg+'">'+sv.t+'</span>':'')+(baixo?'<span class="tag" style="color:var(--rose);background:#FDECEC">Estoque baixo</span>':'')+'</div></div>'+
       '<div style="text-align:right"><div class="val2" style="font-size:19px;color:'+(baixo?'var(--rose)':'var(--ink)')+'">'+estoqueDe(p)+'</div><div style="font-size:11px;color:var(--muted)">mín '+Number(p.minimo||0)+'</div>'+
       '<button class="pagarBtn" style="color:var(--pine);background:#EEF2F0;margin-top:4px" onclick="abrirMovEstoque(\''+p.id+'\')">Movimentar</button></div></div>';
   }).join(''):'<div class="vazio">Nenhum produto. Toque em + para cadastrar, ou importe uma nota.</div>';
   return '<label class="import"><span>'+IC.baixar+' Importar entrada por XML da nota</span><input type="file" accept=".xml" onchange="importarXml(event)" style="display:none"/></label>'+
-    '<input placeholder="Buscar produto…" oninput="filtroEstoque=this.value;render()" value="'+(filtroEstoque||'')+'"/>'+corpo;
+    '<input placeholder="Buscar produto…" oninput="filtroEstoque=this.value;render()" value="'+escapeHtml(filtroEstoque||'')+'"/>'+corpo;
 }
 function abrirProduto(){
   abrirFolha('Novo produto',
@@ -3305,10 +3321,10 @@ function vContas(){
         const mv=c.status==='PAGO'?movimentoDaConta(c.id):null;
         const og=mv?origemTag(mv.origem):null;
         return '<div class="item" style="cursor:pointer" onclick="abrirContaDetalhe(\''+c.id+'\')"><div style="flex:1">'+
-          '<div style="font-size:14px;font-weight:500">'+c.desc+'</div>'+
+          '<div style="font-size:14px;font-weight:500">'+escapeHtml(c.desc)+'</div>'+
           '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">'+
             '<span class="tag" style="color:'+st.c+';background:'+st.bg+'">'+st.t+'</span>'+
-            (c.categoria?'<span class="tag" style="color:var(--muted);background:#EEEAE9">'+c.categoria+'</span>':'')+
+            (c.categoria?'<span class="tag" style="color:var(--muted);background:#EEEAE9">'+escapeHtml(c.categoria)+'</span>':'')+
             (og?'<span class="tag" style="color:'+og.c+';background:'+og.bg+'">'+og.t+'</span>':'')+
           '</div></div>'+
           '<div style="text-align:right"><div class="val2" style="font-size:16px">'+brl(c.valor)+'</div>'+
@@ -3347,8 +3363,8 @@ function abrirContaDetalhe(id){
     '<div class="detVal">'+brl(c.valor)+'</div>'+
     '<div class="detLinha"><span>Situação</span><strong>'+sit+'</strong></div>'+
     '<div class="detLinha"><span>Vencimento</span><strong>'+dm(c.venc)+'</strong></div>'+
-    (c.categoria?'<div class="detLinha"><span>Categoria</span><strong>'+c.categoria+'</strong></div>':'')+
-    (c.documento?'<div class="detLinha"><span>Nº do boleto</span><strong>'+c.documento+'</strong></div>':'')+
+    (c.categoria?'<div class="detLinha"><span>Categoria</span><strong>'+escapeHtml(c.categoria)+'</strong></div>':'')+
+    (c.documento?'<div class="detLinha"><span>Nº do boleto</span><strong>'+escapeHtml(c.documento)+'</strong></div>':'')+
     (c.linha?
       '<div style="margin-top:10px"><div style="font-size:12px;color:var(--muted);margin-bottom:4px">Linha digitável (pra pagar mesmo sem o boleto em mãos)</div>'+
       '<div style="font-family:var(--g);font-size:14px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;word-break:break-all">'+formatarLinha(c.linha)+'</div>'+
@@ -3796,8 +3812,8 @@ function quitar(id){
   // sugere a data do vencimento; se ainda não venceu, sugere hoje
   const sugerida = (c.venc && c.venc <= hojeISO()) ? c.venc : hojeISO();
   abrirFolha(receber?'Marcar recebido':'Marcar pago',
-    '<div class="item" style="margin-bottom:4px"><div style="flex:1"><div style="font-size:14px;font-weight:500">'+c.desc+'</div>'+
-    (c.categoria?'<div style="font-size:11.5px;color:var(--muted)">'+c.categoria+'</div>':'')+'</div>'+
+    '<div class="item" style="margin-bottom:4px"><div style="flex:1"><div style="font-size:14px;font-weight:500">'+escapeHtml(c.desc)+'</div>'+
+    (c.categoria?'<div style="font-size:11.5px;color:var(--muted)">'+escapeHtml(c.categoria)+'</div>':'')+'</div>'+
     '<div class="val2" style="font-size:16px">'+brl(c.valor)+'</div></div>'+
     '<label class="campo">'+(receber?'Data do recebimento':'Data do pagamento')+'</label>'+
     '<input id="qdata" type="date" value="'+sugerida+'"/>'+
@@ -3877,7 +3893,7 @@ function blocoCategorias(titulo,tipo,iv,cor){
     lista.map(function(x){
       const pct=soma>0?Math.round(x.total/soma*100):0;
       return '<div class="catLinha" onclick="verCategoria(\''+encodeURIComponent(x.cat)+'\',\''+tipo+'\')">'+
-        '<div class="catTopo"><span>'+x.cat+'</span><strong>'+brl(x.total)+'</strong></div>'+
+        '<div class="catTopo"><span>'+escapeHtml(x.cat)+'</span><strong>'+brl(x.total)+'</strong></div>'+
         '<div class="catBarra"><div style="width:'+pct+'%;background:'+cor+'"></div></div>'+
         '<div class="catPct">'+pct+'% · toque para ver os lançamentos</div></div>';
     }).join('');
@@ -3894,7 +3910,7 @@ function verCategoria(catEnc,tipo){
     '<div class="totalAberto"><span>'+itens.length+' lançamento(s)</span><strong>'+brl(soma)+'</strong></div>'+
     itens.map(function(m){
       return '<div class="item" style="margin-top:8px"><div style="flex:1">'+
-        '<div style="font-size:14px;font-weight:500">'+(m.desc||cat)+'</div>'+
+        '<div style="font-size:14px;font-weight:500">'+escapeHtml(m.desc||cat)+'</div>'+
         '<div style="font-size:11.5px;color:var(--muted)">'+dm(dataLocal(m.ts))+'</div></div>'+
         '<div class="val2">'+brl(m.valor)+'</div></div>';
     }).join(''));
@@ -3944,7 +3960,7 @@ function exportarCsv(){
 function abrirFolha(titulo,html,apos){
   const ov=document.createElement('div'); ov.className='overlay'; ov.id='overlay';
   ov.onclick=function(e){ if(e.target===ov) fecharFolha(); };
-  ov.innerHTML='<div class="folha"><div class="folhaAlca"></div><div class="folhaTopo"><span class="folhaTitulo">'+titulo+'</span><button class="fechar" onclick="fecharFolha()">✕</button></div>'+html+'</div>';
+  ov.innerHTML='<div class="folha"><div class="folhaAlca"></div><div class="folhaTopo"><span class="folhaTitulo">'+escapeHtml(titulo)+'</span><button class="fechar" onclick="fecharFolha()">✕</button></div>'+html+'</div>';
   document.body.appendChild(ov); if(apos) apos();
 }
 function fecharFolha(){ pararScanner(); const o=document.getElementById('overlay'); if(o) o.remove(); }
