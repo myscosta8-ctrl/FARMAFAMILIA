@@ -3384,6 +3384,8 @@ function confirmarPagamento(id){
   quitar(id);   // já abre a folha pedindo a data do pagamento
 }
 async function reabrirConta(id){
+  if(!podeFazer('excluir')){ bloqueado('excluir'); return; }
+  if(!podeFazer('pagar')){ bloqueado('pagar'); return; }
   const c=contas.filter(function(x){ return x.id===id; })[0]; if(!c) return;
   if(!confirm('Voltar esta conta para "em aberto"?\n\nO lançamento correspondente sairá do caixa.')) return;
   try{
