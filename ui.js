@@ -234,7 +234,13 @@ function previa(idCampo,idAviso){
 }
 // Lançamentos podem ser corrigidos ou apagados por até 72h após serem feitos.
 const PRAZO_EDICAO=72*3600*1000;
+// O prazo protege contra edição de lançamento antigo por engano — mas o
+// administrador precisa poder corrigir um erro mesmo depois de 72h, sem
+// precisar mexer direto no banco. Toda edição continua registrada no
+// histórico (quem, quando, valor antigo x novo), então a rastreabilidade
+// não se perde.
 function podeEditar(m){
+  if(souAdmin) return true;
   if(!m.criadoEm) return true;
   return (Date.now()-m.criadoEm) < PRAZO_EDICAO;
 }
@@ -296,7 +302,7 @@ function abrirEditar(id){
     (editDividido ? '' :
       '<label class="campo" id="eOrigemLabel">'+(editTipo==='SAIDA'?'De onde saiu o dinheiro':'Onde caiu esse dinheiro')+' (opcional)</label>'+chipsOrigem('eOrigemChips',editOrigem,'escolherEditOrigem'))+
     '<label class="campo">Data</label><input id="edata" type="date" value="'+dataISO+'"/>'+
-    '<div class="dica">Pode ser corrigido por mais '+(h!=null?h+'h':'algum tempo')+'.</div>'+
+    '<div class="dica">'+(souAdmin?'Como administrador, você pode corrigir a qualquer momento.':'Pode ser corrigido por mais '+(h!=null?h+'h':'algum tempo')+'.')+'</div>'+
     '<button class="primario" id="eBtn">Salvar correção</button>'+
     '<button class="btnExcluir" id="eDel">Excluir lançamento</button>',
     function(){
