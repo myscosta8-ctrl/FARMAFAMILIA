@@ -786,8 +786,8 @@ function abrirRecorrentes(){
     '<div class="dica" style="margin-top:0">Cadastre uma vez. Todo mês o app cria a conta sozinho.</div>'+
     (recorrentes.length?recorrentes.map(function(r){
       return '<div class="item" style="margin-top:8px"><div style="flex:1">'+
-        '<div style="font-size:14px;font-weight:500">'+r.descricao+'</div>'+
-        '<div style="font-size:11.5px;color:var(--muted)">todo dia '+r.dia+(r.categoria?' · '+r.categoria:'')+(r.ativo?'':' · pausada')+'</div></div>'+
+        '<div style="font-size:14px;font-weight:500">'+escapeHtml(r.descricao)+'</div>'+
+        '<div style="font-size:11.5px;color:var(--muted)">todo dia '+r.dia+(r.categoria?' · '+escapeHtml(r.categoria):'')+(r.ativo?'':' · pausada')+'</div></div>'+
         '<div style="text-align:right"><div class="val2">'+brl(r.valor)+'</div>'+
         '<button class="lixo" onclick="apagarRecorrente(\''+r.id+'\')">'+IC.lixo+'</button></div></div>';
     }).join(''):'<div class="vazio">Nenhuma conta recorrente ainda.</div>')+
