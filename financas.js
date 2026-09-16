@@ -121,6 +121,9 @@ function saldoDia(){ const d0=inicioDia(),am=d0+86400000; return {ent:somaMov('E
 function estoqueDe(p){ return Number(p.estoque||0); }
 function diasAte(d){ return Math.round((new Date(comHora(d))-new Date())/86400000); }
 function statusValidade(v){ if(!v)return null; const dias=diasAte(v); if(dias<0)return {t:'Vencido',c:'var(--rose)',bg:'#FDECEC'}; if(dias<=30)return {t:'Vence em '+dias+'d',c:'var(--amber)',bg:'#FEF3D9'}; return {t:'Val. '+dm(v),c:'var(--muted)',bg:'#EEF2F0'}; }
+// Quanto ainda falta pagar/receber de uma conta — igual ao valor total
+// enquanto nada foi pago; some quando um pagamento parcial já entrou.
+function valorRestante(c){ return Math.max(0, Number(c.valor||0)-Number(c.valorPago||0)); }
 
 // Filtro das abas: Boletos e Despesas são contas a pagar; A receber é o que entra.
 function filtroAba(a){
@@ -150,7 +153,7 @@ function alertas(){
   const baixo=produtos.filter(function(p){ return Number(p.minimo||0)>0&&estoqueDe(p)<Number(p.minimo); }).length;
   const venc=produtos.filter(function(p){ return p.validade&&diasAte(p.validade)<0&&estoqueDe(p)>0; }).length;
   const cp=contas.filter(function(c){ return c.tipo==='PAGAR'&&c.status!=='PAGO'&&diasAte(c.venc)<=7; });
-  return {baixo:baixo,venc:venc,contas:cp.length,contasTotal:cp.reduce(function(s,c){ return s+c.valor; },0),proxima:contasOrd('PAGAR').filter(function(c){ return c.status!=='PAGO'; })[0]};
+  return {baixo:baixo,venc:venc,contas:cp.length,contasTotal:cp.reduce(function(s,c){ return s+valorRestante(c); },0),proxima:contasOrd('PAGAR').filter(function(c){ return c.status!=='PAGO'; })[0]};
 }
 // ---- Busca de lançamentos e contas ----
 let buscaTexto='', buscaDe='', buscaAte='', buscaTipo='TODOS';
@@ -283,7 +286,7 @@ function painelMeses(lista){
     let atrasadas=[];
     if(k===0) atrasadas=abertas.filter(function(c){ return new Date(c.venc+'T12:00:00').getTime()<ini; });
     const todas=doMes.concat(atrasadas);
-    const total=todas.reduce(function(s,c){ return s+c.valor; },0);
+    const total=todas.reduce(function(s,c){ return s+valorRestante(c); },0);
     blocos.push({
       chave:ano+'-'+String(mes).padStart(2,'0'),
       rot:NOMES_MES[mes-1]+'/'+String(ano).slice(2),

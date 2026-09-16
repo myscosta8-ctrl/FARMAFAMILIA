@@ -280,6 +280,12 @@ function movimentoDaConta(contaId){
   for(let i=0;i<movimentos.length;i++){ if(movimentos[i].contaId===contaId) return movimentos[i]; }
   return null;
 }
+// Todos os pagamentos já lançados para uma conta (uma conta paga em partes
+// tem mais de um), do mais recente para o mais antigo.
+function movimentosDaConta(contaId){
+  return movimentos.filter(function(m){ return m.contaId===contaId; })
+    .sort(function(a,b){ return (b.criadoEm||b.ts)-(a.criadoEm||a.ts); });
+}
 function abrirEditar(id){
   if(!podeFazer('editar')){ bloqueado('editar'); return; }
   const m=movimentos.filter(function(x){return x.id===id})[0]; if(!m) return;
@@ -764,16 +770,20 @@ function vContas(){
           : dias===0? {t:'Vence hoje',c:'var(--rose)',bg:'#FDECEC'}
           : dias<=3 ? {t:'Vence em '+dias+'d',c:'#8A5A00',bg:'#FDF1DC'}
           : {t:'Vence '+dm(c.venc),c:'var(--muted)',bg:'#EEEAE9'};
-        const mv=c.status==='PAGO'?movimentoDaConta(c.id):null;
+        const parcial=c.status==='PARCIAL';
+        const mv=(c.status==='PAGO'||parcial)?movimentoDaConta(c.id):null;
         const og=mv?origemTag(mv.origem):null;
+        const valorMostrado=parcial?valorRestante(c):c.valor;
         return '<div class="item" style="cursor:pointer" onclick="abrirContaDetalhe(\''+c.id+'\')"><div style="flex:1">'+
           '<div style="font-size:14px;font-weight:500">'+escapeHtml(c.desc)+'</div>'+
           '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">'+
             '<span class="tag" style="color:'+st.c+';background:'+st.bg+'">'+st.t+'</span>'+
+            (parcial?'<span class="tag" style="color:#8A5A00;background:#FDF1DC">Parcial</span>':'')+
             (c.categoria?'<span class="tag" style="color:var(--muted);background:#EEEAE9">'+escapeHtml(c.categoria)+'</span>':'')+
             (og?'<span class="tag" style="color:'+og.c+';background:'+og.bg+'">'+og.t+'</span>':'')+
           '</div></div>'+
-          '<div style="text-align:right"><div class="val2" style="font-size:16px">'+brl(c.valor)+'</div>'+
+          '<div style="text-align:right"><div class="val2" style="font-size:16px">'+brl(valorMostrado)+'</div>'+
+          (parcial?'<div style="font-size:10px;color:var(--muted)">de '+brl(c.valor)+'</div>':'')+
           '<div style="font-size:10.5px;color:var(--muted);margin-top:4px">toque para ver</div>'+
           '</div></div>';
       }).join('')
@@ -801,27 +811,42 @@ function abrirContaDetalhe(id){
   const c=contas.filter(function(x){ return x.id===id; })[0]; if(!c) return;
   const receber=c.tipo==='RECEBER';
   const dias=diasAte(c.venc);
+  const pago=Number(c.valorPago||0);
+  const restante=valorRestante(c);
   const sit = c.status==='PAGO' ? (receber?'Recebido':'Pago')
+    : c.status==='PARCIAL' ? 'Parcialmente '+(receber?'recebido':'pago')
     : dias<0 ? 'Em atraso' : dias===0 ? 'Vence hoje' : 'Vence em '+dias+' dia(s)';
-  const movLigado = c.status==='PAGO' ? movimentoDaConta(c.id) : null;
-  const og = movLigado ? origemTag(movLigado.origem) : null;
+  const pagamentos=movimentosDaConta(c.id);
   abrirFolha(c.desc,
     '<div class="detVal">'+brl(c.valor)+'</div>'+
     '<div class="detLinha"><span>Situação</span><strong>'+sit+'</strong></div>'+
     '<div class="detLinha"><span>Vencimento</span><strong>'+dm(c.venc)+'</strong></div>'+
     (c.categoria?'<div class="detLinha"><span>Categoria</span><strong>'+escapeHtml(c.categoria)+'</strong></div>':'')+
     (c.documento?'<div class="detLinha"><span>Nº do boleto</span><strong>'+escapeHtml(c.documento)+'</strong></div>':'')+
+    (pago>0?
+      '<div class="detLinha"><span>'+(receber?'Recebido':'Pago')+'</span><strong style="color:var(--emerald)">'+brl(pago)+'</strong></div>'+
+      (c.status!=='PAGO'?'<div class="detLinha"><span>Restante</span><strong style="color:var(--rose)">'+brl(restante)+'</strong></div>':'')
+      : '')+
     (c.linha?
       '<div style="margin-top:10px"><div style="font-size:12px;color:var(--muted);margin-bottom:4px">Linha digitável (pra pagar mesmo sem o boleto em mãos)</div>'+
       '<div style="font-family:var(--g);font-size:14px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;word-break:break-all">'+formatarLinha(c.linha)+'</div>'+
       '<button class="btnS" style="width:100%;margin-top:8px" onclick="copiarLinha(\''+c.linha+'\')">Copiar linha digitável</button></div>'
       : '')+
-    (c.status==='PAGO'
-      ? '<div class="detLinha"><span>'+(receber?'Recebido em':'Pago em')+'</span><strong>'+(og?og.t:'não informado')+'</strong></div>'
+    (pagamentos.length?
+      '<h2 class="sec" style="margin-top:14px">Pagamentos</h2>'+
+      pagamentos.map(function(p){
+        const og=origemTag(p.origem);
+        return '<div class="item" style="margin-top:6px"><div style="flex:1">'+
+          '<div style="font-size:13.5px">'+dm(dataLocal(p.ts))+(og?' · '+og.t:'')+'</div></div>'+
+          '<div class="val2" style="font-size:14px">'+brl(p.valor)+'</div></div>';
+      }).join('')
       : '')+
-    (c.status==='PAGO'
-      ? '<button class="btnS" style="width:100%;margin-top:14px" onclick="reabrirConta(\''+c.id+'\')">Marcar como não '+(receber?'recebido':'pago')+'</button>'
-      : '<button class="primario" style="margin-top:14px" onclick="confirmarPagamento(\''+c.id+'\')">'+(receber?'Confirmar recebimento':'Confirmar pagamento')+'</button>')+
+    (pago>0?
+      '<button class="btnS" style="width:100%;margin-top:14px" onclick="desfazerUltimoPagamento(\''+c.id+'\')">Desfazer último pagamento</button>'
+      : '')+
+    (c.status!=='PAGO'?
+      '<button class="primario" style="margin-top:10px" onclick="confirmarPagamento(\''+c.id+'\')">'+(receber?'Confirmar recebimento':'Confirmar pagamento')+(pago>0?' (restante '+brl(restante)+')':'')+'</button>'
+      : '')+
     '<button class="btnExcluir" onclick="apagarConta(\''+c.id+'\')">Excluir esta conta</button>');
 }
 function confirmarPagamento(id){
@@ -829,17 +854,24 @@ function confirmarPagamento(id){
   fecharFolha();
   quitar(id);   // já abre a folha pedindo a data do pagamento
 }
-async function reabrirConta(id){
+async function desfazerUltimoPagamento(id){
   if(!podeFazer('excluir')){ bloqueado('excluir'); return; }
   if(!podeFazer('pagar')){ bloqueado('pagar'); return; }
   const c=contas.filter(function(x){ return x.id===id; })[0]; if(!c) return;
-  if(!confirm('Voltar esta conta para "em aberto"?\n\nO lançamento correspondente sairá do caixa.')) return;
+  const pagamentos=movimentosDaConta(id);
+  const ultimo=pagamentos[0];
+  if(!ultimo){ alert('Nenhum pagamento registrado para desfazer.'); return; }
+  if(!confirm('Desfazer o pagamento de '+brl(ultimo.valor)+' ('+dm(dataLocal(ultimo.ts))+')?\n\nO lançamento correspondente sairá do caixa.')) return;
   try{
-    // remove o lançamento vinculado e reabre a conta
-    const movs=movimentos.filter(function(m){ return m.contaId===id; });
-    for(let i=0;i<movs.length;i++) await api('movimentos?id=eq.'+movs[i].id,{method:'DELETE'});
-    await api('contas?id=eq.'+id,{method:'PATCH',body:JSON.stringify({status:'PENDENTE',data_baixa:null})});
-    await registrar('REABRIU','Conta',c.desc,c.valor);
+    // remove só o pagamento mais recente — pagamentos parciais anteriores
+    // continuam valendo, a conta volta a PARCIAL (ou PENDENTE se era o único)
+    await api('movimentos?id=eq.'+ultimo.id,{method:'DELETE'});
+    const novoValorPago=Math.max(0, Number(c.valorPago||0)-ultimo.valor);
+    const novoStatus = novoValorPago<=0.005 ? 'PENDENTE' : 'PARCIAL';
+    await api('contas?id=eq.'+id,{method:'PATCH',body:JSON.stringify({
+      status:novoStatus, valor_pago:novoValorPago, data_baixa:null
+    })});
+    await registrar('REABRIU','Conta',c.desc,ultimo.valor);
     await recarregar(); fecharFolha();
   }catch(e){ alert(e.message); }
 }
@@ -954,6 +986,7 @@ async function salvarConta(continuar){
       descricao:document.getElementById('cd').value.trim()||(boleto?'Boleto':despesa?'Despesa':'Recebimento'),
       valor:v, vencimento:venc,
       status: contaJaPaga?'PAGO':'PENDENTE',
+      valor_pago: contaJaPaga?v:0,
       data_baixa: contaJaPaga?montarDataHora(dataPag):null,
       linha_digitavel:(el&&el.value.replace(/\D/g,''))||null,
       documento: ultimoCodigoLido?documentoDe(ultimoCodigoLido):null
@@ -1257,16 +1290,21 @@ function quitar(id){
   if(!podeFazer('pagar')){ bloqueado('pagar'); return; }
   const c=contas.filter(function(x){return x.id===id})[0]; if(!c)return;
   const receber=c.tipo==='RECEBER';
+  const restante=valorRestante(c);
   // sugere a data do vencimento; se ainda não venceu, sugere hoje
   const sugerida = (c.venc && c.venc <= hojeISO()) ? c.venc : hojeISO();
+  const valorFmt=restante.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   abrirFolha(receber?'Marcar recebido':'Marcar pago',
     '<div class="item" style="margin-bottom:4px"><div style="flex:1"><div style="font-size:14px;font-weight:500">'+escapeHtml(c.desc)+'</div>'+
     (c.categoria?'<div style="font-size:11.5px;color:var(--muted)">'+escapeHtml(c.categoria)+'</div>':'')+'</div>'+
     '<div class="val2" style="font-size:16px">'+brl(c.valor)+'</div></div>'+
+    ((c.valorPago||0)>0?'<div class="dica" style="margin-top:0">Já '+(receber?'recebido':'pago')+': '+brl(c.valorPago)+' · Restante: '+brl(restante)+'</div>':'')+
+    '<label class="campo">Valor '+(receber?'recebido':'pago')+' agora</label>'+
+    '<input id="qValor" inputmode="numeric" oninput="mascaraMoeda(this)" value="'+valorFmt+'"/>'+
     '<label class="campo">'+(receber?'Data do recebimento':'Data do pagamento')+'</label>'+
     '<input id="qdata" type="date" value="'+sugerida+'"/>'+
     '<label class="campo">'+(receber?'Onde caiu esse dinheiro':'De onde saiu o dinheiro')+' (opcional)</label>'+chipsOrigem('qOrigemChips',null,'escolherQuitarOrigem')+
-    '<div class="dica">O lançamento entra no caixa nesta data.</div>'+
+    '<div class="dica">O lançamento entra no caixa nesta data. Deixe o valor menor que o total para registrar um pagamento parcial.</div>'+
     '<button class="primario" id="qBtn">Confirmar</button>',
     function(){ quitarOrigem=null; document.getElementById('qBtn').onclick=function(){ confirmarBaixa(id); }; });
 }
@@ -1277,23 +1315,29 @@ function escolherQuitarOrigem(o){
 }
 async function confirmarBaixa(id){
   const c=contas.filter(function(x){return x.id===id})[0]; if(!c)return;
+  const valorAgora=parseValor(document.getElementById('qValor').value);
+  if(!valorAgora||isNaN(valorAgora)||valorAgora<=0){ alert('Informe o valor.'); return; }
   const data=document.getElementById('qdata').value||hojeISO();
   const b=document.getElementById('qBtn'); b.textContent='Salvando…'; b.disabled=true;
   try{
+    const novoValorPago=Number(c.valorPago||0)+valorAgora;
+    const completo=novoValorPago >= c.valor-0.005;
     await api('contas?id=eq.'+id,{method:'PATCH',body:JSON.stringify({
-      status:'PAGO', data_baixa:montarDataHora(data)
+      status: completo?'PAGO':'PARCIAL',
+      valor_pago: novoValorPago,
+      data_baixa: completo?montarDataHora(data):null
     })});
     await api('movimentos',{method:'POST',body:JSON.stringify({
       tipo:c.tipo==='PAGAR'?'SAIDA':'ENTRADA',
       // usa a categoria da própria conta; boleto de distribuidor entra como Distribuidor
       categoria:c.categoria||(c.tipo==='PAGAR'?(c.origem==='BOLETO'?'Distribuidor':'Outros'):'Outros'),
-      valor:c.valor,
+      valor:valorAgora,
       descricao:c.desc,
       data_hora:montarDataHora(data),
       conta_id:c.id,
       origem_pagamento: quitarOrigem
     })});
-    await registrar('PAGOU', c.tipo==='PAGAR'?'Boleto/Conta':'Recebimento', c.desc, c.valor);
+    await registrar('PAGOU', c.tipo==='PAGAR'?'Boleto/Conta':'Recebimento', c.desc, valorAgora);
     fecharFolha(); await recarregar();
   }catch(e){ alert(e.message); b.textContent='Confirmar'; b.disabled=false; }
 }

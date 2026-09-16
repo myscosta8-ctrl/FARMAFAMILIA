@@ -108,7 +108,7 @@ async function carregarTudo(){
     ]);
     movimentos = (res[0]||[]).map(function(x){ return {id:x.id, ts:new Date(x.data_hora).getTime(), tipo:x.tipo, categoria:x.categoria, valor:Number(x.valor), desc:x.descricao, contaId:x.conta_id||null, origem:x.origem_pagamento||null, valorDinheiro:x.valor_dinheiro!=null?Number(x.valor_dinheiro):null, valorEletronico:x.valor_eletronico!=null?Number(x.valor_eletronico):null, criadoEm:x.criado_em?new Date(x.criado_em).getTime():null}; });
     produtos   = (res[1]||[]).map(function(x){ return {id:x.id, desc:x.descricao, codigo:x.codigo_barras||'', estoque:Number(x.estoque), minimo:Number(x.estoque_minimo), validade:x.validade}; });
-    contas     = (res[2]||[]).map(function(x){ return {id:x.id, tipo:x.tipo, origem:x.origem||'MANUAL', categoria:x.categoria||'', desc:x.descricao, valor:Number(x.valor), venc:x.vencimento, status:x.status, linha:x.linha_digitavel||'', documento:x.documento||'', dataBaixa:x.data_baixa||null}; });
+    contas     = (res[2]||[]).map(function(x){ return {id:x.id, tipo:x.tipo, origem:x.origem||'MANUAL', categoria:x.categoria||'', desc:x.descricao, valor:Number(x.valor), valorPago:x.valor_pago!=null?Number(x.valor_pago):0, venc:x.vencimento, status:x.status, linha:x.linha_digitavel||'', documento:x.documento||'', dataBaixa:x.data_baixa||null}; });
     montarCategorias(res[3]);
     carregarBeneficiarios();
     await carregarPermissoes();

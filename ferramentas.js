@@ -112,7 +112,7 @@ function comprasPagas(){
 // quanto do saldo acumulado já está, na prática, comprometido.
 function totalAPagarTudo(){
   return contas.filter(function(c){ return c.tipo==='PAGAR'&&c.status!=='PAGO'; })
-    .reduce(function(s,c){ return s+c.valor; },0);
+    .reduce(function(s,c){ return s+valorRestante(c); },0);
 }
 // Caixa livre = saldo acumulado menos tudo que ainda vai sair, de qualquer
 // vencimento. É a resposta pra "quanto eu realmente posso usar agora".
@@ -637,7 +637,7 @@ function painelVencimentos(lista){
     else if(t<fimDoMes()) grupo.mes.push(c);
     else grupo.depois.push(c);
   });
-  const soma=function(a){ return a.reduce(function(s,c){ return s+c.valor; },0); };
+  const soma=function(a){ return a.reduce(function(s,c){ return s+valorRestante(c); },0); };
   const totalGeral=soma(abertas);
 
   if(!abertas.length) return '';
