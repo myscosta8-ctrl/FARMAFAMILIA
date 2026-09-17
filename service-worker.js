@@ -7,7 +7,7 @@
 //  O cache serve só para o app continuar abrindo sem internet.
 // ============================================================
 
-const CACHE = "farmafamilia-v36";
+const CACHE = "farmafamilia-v37";
 const ARQUIVOS = [
   "./",
   "./index.html",

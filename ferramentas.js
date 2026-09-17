@@ -399,6 +399,21 @@ async function registrar(acao, entidade, descricao, valor, detalhe){
 }
 // Tela do histórico de movimentações
 const COR_ACAO={CRIOU:'var(--emerald)',EDITOU:'#8A5A00',PAGOU:'var(--pine)',REABRIU:'#8A5A00',EXCLUIU:'var(--rose)'};
+function linhaHistorico(h){
+  const d=new Date(h.quando);
+  const data=d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  const cor=COR_ACAO[h.acao]||'var(--muted)';
+  const podeReverter = h.acao==='EXCLUIU' && h.detalhe;
+  return '<div class="item" style="margin-top:6px;display:block">'+
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">'+
+      '<span class="tag" style="color:'+cor+';background:'+cor+'18">'+h.acao+' · '+h.entidade+'</span>'+
+      (h.valor!=null?'<strong class="val2">'+brl(h.valor)+'</strong>':'')+
+    '</div>'+
+    '<div style="font-size:13.5px;margin-top:5px">'+escapeHtml(h.descricao||'—')+'</div>'+
+    '<div style="font-size:11px;color:var(--muted);margin-top:3px">'+data+' · '+escapeHtml(h.quem||'?')+'</div>'+
+    (podeReverter?'<button class="pagarBtn" style="margin-top:6px" onclick="restaurarDoHistorico(\''+h.id+'\')">Recuperar este lançamento</button>':'')+
+  '</div>';
+}
 async function abrirHistorico(){
   abrirFolha('Histórico de movimentações','<div class="vazio">Carregando…</div>',null);
   let reg=[];
@@ -406,24 +421,48 @@ async function abrirHistorico(){
   const cont=document.querySelector('#overlay .folha');
   if(!cont) return;
   const corpo = reg.length
-    ? reg.map(function(h){
-        const d=new Date(h.quando);
-        const data=d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
-        const cor=COR_ACAO[h.acao]||'var(--muted)';
-        const podeReverter = h.acao==='EXCLUIU' && h.detalhe;
-        return '<div class="item" style="margin-top:6px;display:block">'+
-          '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">'+
-            '<span class="tag" style="color:'+cor+';background:'+cor+'18">'+h.acao+' · '+h.entidade+'</span>'+
-            (h.valor!=null?'<strong class="val2">'+brl(h.valor)+'</strong>':'')+
-          '</div>'+
-          '<div style="font-size:13.5px;margin-top:5px">'+escapeHtml(h.descricao||'—')+'</div>'+
-          '<div style="font-size:11px;color:var(--muted);margin-top:3px">'+data+' · '+escapeHtml(h.quem||'?')+'</div>'+
-          (podeReverter?'<button class="pagarBtn" style="margin-top:6px" onclick="restaurarDoHistorico(\''+h.id+'\')">Recuperar este lançamento</button>':'')+
-        '</div>';
-      }).join('')
+    ? reg.map(linhaHistorico).join('')
     : '<div class="vazio">Ainda não há registros. A partir de agora, tudo que for lançado, editado ou excluído aparece aqui.</div>';
   cont.innerHTML='<div class="folhaTopo"><span class="folhaTitulo">Histórico de movimentações</span><button class="fechar" onclick="fecharFolha()">✕</button></div>'+
-    '<div class="dica" style="margin-top:0">Últimos 200 registros. Exclusões podem ser recuperadas.</div>'+corpo;
+    '<button class="btnS" style="width:100%;margin-top:2px" onclick="abrirHistoricoPorMes()">Ver por mês (histórico completo)</button>'+
+    '<div class="dica" style="margin-top:8px">Mostrando os últimos 200 registros. Exclusões podem ser recuperadas.</div>'+corpo;
+}
+// Histórico não fica guardado na memória do app (é buscado do Supabase na
+// hora que a tela abre) — então navegar por mês aqui não tem o limite de
+// 200 nem pesa no modo offline: cada mês busca só o que é daquele mês.
+let mesHistoricoSel=null;
+function abrirHistoricoPorMes(){
+  fecharFolha();
+  if(!mesHistoricoSel){ const d=new Date(); mesHistoricoSel={ano:d.getFullYear(), mes:d.getMonth()+1}; }
+  abrirFolha('Histórico por mês','<div id="hmCorpo"></div>', carregarHistoricoMes);
+}
+function trocarMesHistorico(delta){
+  let {ano,mes}=mesHistoricoSel;
+  mes+=delta;
+  if(mes<1){ mes=12; ano--; } else if(mes>12){ mes=1; ano++; }
+  mesHistoricoSel={ano,mes};
+  carregarHistoricoMes();
+}
+async function carregarHistoricoMes(){
+  const alvo=document.getElementById('hmCorpo'); if(!alvo) return;
+  const {ano,mes}=mesHistoricoSel;
+  const nav='<div class="mesNav">'+
+      '<button onclick="trocarMesHistorico(-1)">‹</button>'+
+      '<span>'+NOMES_MES[mes-1].charAt(0).toUpperCase()+NOMES_MES[mes-1].slice(1)+'/'+ano+'</span>'+
+      '<button onclick="trocarMesHistorico(1)">›</button>'+
+    '</div>';
+  alvo.innerHTML=nav+'<div class="vazio">Carregando…</div>';
+  const ini=new Date(ano,mes-1,1).toISOString();
+  const fim=new Date(ano,mes,1).toISOString();
+  let reg=[];
+  try{
+    reg=await api('historico?select=*&order=quando.desc&quando=gte.'+encodeURIComponent(ini)+'&quando=lt.'+encodeURIComponent(fim))||[];
+  }catch(e){ alvo.innerHTML=nav+'<div class="vazio">Não consegui carregar: '+e.message+'</div>'; return; }
+  // se o mês selecionado mudou enquanto a busca estava no ar, descarta o resultado velho
+  if(mesHistoricoSel.ano!==ano || mesHistoricoSel.mes!==mes) return;
+  alvo.innerHTML=nav+(reg.length
+    ? '<div class="dica" style="margin-top:0">'+reg.length+' registro(s) neste mês.</div>'+reg.map(linhaHistorico).join('')
+    : '<div class="vazio">Nenhum registro neste mês.</div>');
 }
 // Recupera um lançamento/conta que foi excluído, a partir da cópia guardada no log
 async function restaurarDoHistorico(idLog){
