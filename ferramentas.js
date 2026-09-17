@@ -673,8 +673,21 @@ let filtroVenc='todos';
 function rotuloFiltro(f){
   return f==='hoje'?'vence hoje e atrasadas':f==='semana'?'até 7 dias':f==='mes'?'até o fim do mês':f==='depois'?'depois deste mês':'todas';
 }
+// Sem isso, toda conta paga desde o primeiro dia do app ficava empilhada
+// pra sempre na lista — pra achar algo antigo, era rolar tudo. Agora, sem
+// nenhum filtro escolhido, a lista mostra só o que precisa de atenção
+// (tudo pendente) mais o que foi pago/recebido recentemente. Mais antigo
+// que isso, é só usar "Ver contas por mês".
+const JANELA_HISTORICO_PADRAO=60*86400000;
 function aplicaFiltroVenc(lista){
-  if(filtroVenc==='todos') return lista;
+  if(filtroVenc==='todos'){
+    const corte=Date.now()-JANELA_HISTORICO_PADRAO;
+    return lista.filter(function(c){
+      if(c.status!=='PAGO') return true;
+      const dataRef=c.dataBaixa?new Date(c.dataBaixa).getTime():new Date(c.venc+'T12:00:00').getTime();
+      return dataRef>=corte;
+    });
+  }
   const hoje0=inicioDia(), amanha=hoje0+86400000;
   return lista.filter(function(c){
     if(c.status==='PAGO') return false;

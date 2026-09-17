@@ -762,34 +762,95 @@ function vContas(){
     '</div>';
 
   const itens = visiveis.length
-    ? visiveis.map(function(c){
-        const dias=diasAte(c.venc);
-        const st = c.status==='PAGO'
-          ? {t:(contaAba==='RECEBER'?'Recebido':'Pago')+(contaAba==='DESPESA'?' '+dm(c.dataBaixa||c.venc):''), c:'var(--emerald)',bg:'#E7F6EF'}
-          : dias<0  ? {t:'Atrasado',c:'var(--rose)',bg:'#FDECEC'}
-          : dias===0? {t:'Vence hoje',c:'var(--rose)',bg:'#FDECEC'}
-          : dias<=3 ? {t:'Vence em '+dias+'d',c:'#8A5A00',bg:'#FDF1DC'}
-          : {t:'Vence '+dm(c.venc),c:'var(--muted)',bg:'#EEEAE9'};
-        const parcial=c.status==='PARCIAL';
-        const mv=(c.status==='PAGO'||parcial)?movimentoDaConta(c.id):null;
-        const og=mv?origemTag(mv.origem):null;
-        const valorMostrado=parcial?valorRestante(c):c.valor;
-        return '<div class="item" style="cursor:pointer" onclick="abrirContaDetalhe(\''+c.id+'\')"><div style="flex:1">'+
-          '<div style="font-size:14px;font-weight:500">'+escapeHtml(c.desc)+'</div>'+
-          '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">'+
-            '<span class="tag" style="color:'+st.c+';background:'+st.bg+'">'+st.t+'</span>'+
-            (parcial?'<span class="tag" style="color:#8A5A00;background:#FDF1DC">Parcial</span>':'')+
-            (c.categoria?'<span class="tag" style="color:var(--muted);background:#EEEAE9">'+escapeHtml(c.categoria)+'</span>':'')+
-            (og?'<span class="tag" style="color:'+og.c+';background:'+og.bg+'">'+og.t+'</span>':'')+
-          '</div></div>'+
-          '<div style="text-align:right"><div class="val2" style="font-size:16px">'+brl(valorMostrado)+'</div>'+
-          (parcial?'<div style="font-size:10px;color:var(--muted)">de '+brl(c.valor)+'</div>':'')+
-          '<div style="font-size:10.5px;color:var(--muted);margin-top:4px">toque para ver</div>'+
-          '</div></div>';
-      }).join('')
+    ? visiveis.map(function(c){ return linhaContaItem(c); }).join('')
     : '<div class="vazio">'+(filtroVenc==='todos'?'Nenhum registro aqui. Toque em + para adicionar.':'Nenhuma conta neste período.')+'</div>';
+  // No filtro padrão (sem nada selecionado), parte da lista fica escondida
+  // de propósito (pagas há mais de 60 dias) — avisa e mostra o caminho.
+  const escondidas = (filtroVenc==='todos' && !filtroMes) ? (lista.length-visiveis.length) : 0;
+  const dicaHistorico = escondidas>0
+    ? '<div class="dica" style="text-align:center;margin-top:6px">'+escondidas+' conta(s) paga(s) há mais de 60 dias não aparecem aqui. Toque em "Ver contas por mês" para encontrá-las.</div>'
+    : '';
 
-  return cabecalho + painelVencimentos(lista) + painelMeses(lista) + '<h2 class="sec">Lista</h2>' + itens;
+  return cabecalho +
+    '<button class="btnS" style="width:100%;margin-top:8px" onclick="abrirContasMes()">Ver contas por mês</button>'+
+    painelVencimentos(lista) + painelMeses(lista) + '<h2 class="sec">Lista</h2>' + itens + dicaHistorico;
+}
+// Linha de uma conta (boleto/despesa/a receber) — usada na lista principal
+// e na tela "Contas por mês". contaAbaCtx só muda o texto de "Pago em".
+function linhaContaItem(c){
+  const dias=diasAte(c.venc);
+  const receber=c.tipo==='RECEBER';
+  const st = c.status==='PAGO'
+    ? {t:(receber?'Recebido':'Pago')+' '+dm(c.dataBaixa||c.venc), c:'var(--emerald)',bg:'#E7F6EF'}
+    : dias<0  ? {t:'Atrasado',c:'var(--rose)',bg:'#FDECEC'}
+    : dias===0? {t:'Vence hoje',c:'var(--rose)',bg:'#FDECEC'}
+    : dias<=3 ? {t:'Vence em '+dias+'d',c:'#8A5A00',bg:'#FDF1DC'}
+    : {t:'Vence '+dm(c.venc),c:'var(--muted)',bg:'#EEEAE9'};
+  const parcial=c.status==='PARCIAL';
+  const mv=(c.status==='PAGO'||parcial)?movimentoDaConta(c.id):null;
+  const og=mv?origemTag(mv.origem):null;
+  const valorMostrado=parcial?valorRestante(c):c.valor;
+  return '<div class="item" style="cursor:pointer" onclick="abrirContaDetalhe(\''+c.id+'\')"><div style="flex:1">'+
+    '<div style="font-size:14px;font-weight:500">'+escapeHtml(c.desc)+'</div>'+
+    '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">'+
+      '<span class="tag" style="color:'+st.c+';background:'+st.bg+'">'+st.t+'</span>'+
+      (parcial?'<span class="tag" style="color:#8A5A00;background:#FDF1DC">Parcial</span>':'')+
+      (c.categoria?'<span class="tag" style="color:var(--muted);background:#EEEAE9">'+escapeHtml(c.categoria)+'</span>':'')+
+      (og?'<span class="tag" style="color:'+og.c+';background:'+og.bg+'">'+og.t+'</span>':'')+
+    '</div></div>'+
+    '<div style="text-align:right"><div class="val2" style="font-size:16px">'+brl(valorMostrado)+'</div>'+
+    (parcial?'<div style="font-size:10px;color:var(--muted)">de '+brl(c.valor)+'</div>':'')+
+    '<div style="font-size:10.5px;color:var(--muted);margin-top:4px">toque para ver</div>'+
+    '</div></div>';
+}
+// ---- Contas por mês: navega qualquer mês (passado ou futuro), pagas + pendentes ----
+let mesContasSel=null;
+function abrirContasMes(){
+  if(!mesContasSel){
+    const d=new Date();
+    mesContasSel={ano:d.getFullYear(), mes:d.getMonth()+1};
+  }
+  abrirFolha('Contas do mês','<div id="cmCorpo"></div>', redesenharContasMes);
+}
+function trocarMesContas(delta){
+  let {ano,mes}=mesContasSel;
+  mes+=delta;
+  if(mes<1){ mes=12; ano--; } else if(mes>12){ mes=1; ano++; }
+  mesContasSel={ano,mes};
+  redesenharContasMes();
+}
+function redesenharContasMes(){
+  const alvo=document.getElementById('cmCorpo'); if(!alvo) return;
+  const {ano,mes}=mesContasSel;
+  const ini=new Date(ano,mes-1,1).getTime();
+  const fim=new Date(ano,mes,1).getTime();
+  // pertence ao mês pelo vencimento OU pela data em que foi paga/recebida —
+  // assim uma conta vencida em fevereiro mas paga em março aparece nos dois.
+  const doMes=contas.filter(function(c){
+    const tVenc=new Date(c.venc+'T12:00:00').getTime();
+    if(tVenc>=ini && tVenc<fim) return true;
+    if(c.dataBaixa){ const tBaixa=new Date(c.dataBaixa).getTime(); if(tBaixa>=ini && tBaixa<fim) return true; }
+    return false;
+  });
+  const pendentes=doMes.filter(function(c){ return c.status!=='PAGO'; }).sort(function(a,b){ return new Date(a.venc)-new Date(b.venc); });
+  const pagas=doMes.filter(function(c){ return c.status==='PAGO'; }).sort(function(a,b){ return new Date(b.dataBaixa||b.venc)-new Date(a.dataBaixa||a.venc); });
+  const totalPendente=pendentes.reduce(function(s,c){ return s+valorRestante(c); },0);
+  const totalPago=pagas.reduce(function(s,c){ return s+c.valor; },0);
+
+  alvo.innerHTML=
+    '<div class="mesNav">'+
+      '<button onclick="trocarMesContas(-1)">‹</button>'+
+      '<span>'+NOMES_MES[mes-1].charAt(0).toUpperCase()+NOMES_MES[mes-1].slice(1)+'/'+ano+'</span>'+
+      '<button onclick="trocarMesContas(1)">›</button>'+
+    '</div>'+
+    (doMes.length===0
+      ? '<div class="vazio">Nenhuma conta neste mês.</div>'
+      : '<div class="duo">'+
+          '<div class="mini"><div class="l">Pendente</div><div class="v" style="color:var(--rose)">'+brl(totalPendente)+'</div></div>'+
+          '<div class="mini"><div class="l">Pago/recebido</div><div class="v" style="color:var(--emerald)">'+brl(totalPago)+'</div></div>'+
+        '</div>'+
+        (pendentes.length?'<h2 class="sec" style="margin-top:10px">Pendentes</h2>'+pendentes.map(function(c){ return linhaContaItem(c); }).join(''):'')+
+        (pagas.length?'<h2 class="sec" style="margin-top:10px">Pagas / recebidas</h2>'+pagas.map(function(c){ return linhaContaItem(c); }).join(''):''));
 }
 // Detalhe da conta — aqui ficam as ações (pagar, editar, excluir), longe da lista
 // Formata a linha digitável (47 dígitos corridos) no jeito padrão de
@@ -1427,7 +1488,31 @@ function vRel(){
   }
   return '<div class="chips">'+per.map(function(p){ return '<button class="chip '+(relPeriodo===p[0]?'on':'')+'" onclick="relPeriodo=\''+p[0]+'\';render()">'+p[1]+'</button>'; }).join('')+'</div>'+
     (relPeriodo==='custom'?'<div class="duo"><div style="flex:1"><label class="campo">De</label><input type="date" value="'+relDe+'" onchange="relDe=this.value;render()"/></div><div style="flex:1"><label class="campo">Até</label><input type="date" value="'+relAte+'" onchange="relAte=this.value;render()"/></div></div>':'')+
+    '<button class="btnS" style="width:100%;margin-top:6px" onclick="abrirMesesAnteriores()">Meses anteriores</button>'+
     corpo;
+}
+// Atalho pra ver um mês passado sem digitar datas: escolhe o mês e o
+// relatório já recalcula (entradas/saídas por categoria, CSV etc.) pra ele.
+function abrirMesesAnteriores(){
+  const hoje=new Date();
+  const meses=[];
+  for(let k=0;k<12;k++){
+    const d=new Date(hoje.getFullYear(), hoje.getMonth()-k, 1);
+    meses.push({ano:d.getFullYear(), mes:d.getMonth()+1});
+  }
+  abrirFolha('Meses anteriores',
+    meses.map(function(m){
+      const rot=NOMES_MES[m.mes-1].charAt(0).toUpperCase()+NOMES_MES[m.mes-1].slice(1)+'/'+m.ano;
+      return '<button class="msCard" style="margin-top:6px" onclick="escolherMesRelatorio('+m.ano+','+m.mes+')">'+
+        '<div class="msTopo"><span class="msRot" style="text-transform:none">'+rot+'</span></div></button>';
+    }).join(''));
+}
+function escolherMesRelatorio(ano,mes){
+  relPeriodo='custom';
+  const ultimoDia=new Date(ano,mes,0).getDate();
+  relDe=ano+'-'+String(mes).padStart(2,'0')+'-01';
+  relAte=ano+'-'+String(mes).padStart(2,'0')+'-'+String(ultimoDia).padStart(2,'0');
+  fecharFolha(); render();
 }
 function exportarCsv(){
   const iv=intervalo(); if(!iv)return;
